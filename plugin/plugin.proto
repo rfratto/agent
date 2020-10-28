@@ -1,0 +1,76 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+package plugin;
+
+// The Host hosts a plugin.
+service Host {
+  rpc Log(LogMessage) returns (google.protobuf.Empty);
+}
+
+// LogMessage is a plaintext message to send to the host for it to log.
+message LogMessage {
+  string content = 1;
+}
+
+// Plugin represents some dynamically loadable service.
+service Plugin {
+  // Initialize is called by a Host when a plugin is first loaded. It should
+  // not start the plugin.
+  rpc Initialize(InitializeRequest) returns (InitializeResponse);
+
+  // Stop is a control message to the plugin to start its service system.
+  rpc Start(StartRequest) returns (google.protobuf.Empty);
+
+  // Stop is a controll message to the plugin to stop its service system. When
+  // Stop is called, the plugin should shut down. It is valid to call Stop before
+  // calling Start.
+  rpc Stop(StopRequest) returns (google.protobuf.Empty);
+}
+
+// InitializeRequest is a payload provided by a Host when starting the plugin.
+message InitializeRequest {
+  // host_addr can be used to connect to the Host as a client for logging and
+  // sending other types of messages.
+  //
+  // This host_addr may be one of the following protocols:
+  //
+  // - tcp://: use TCP to connect to the host
+  // - plugin://: use stdin/stdout to communicate with the host. This is a special
+  //   protocol used by github.com/grafana/agent/plugin.
+  string host_addr = 1;
+}
+
+// InitializeResponse is the result of an Initialize rpc call. It can provide
+// extra information to the host to hook up extra events.
+message InitializeResponse {
+  // HTTP path prefixes for HTTP requests that should be routed to this plugin.
+  // This requires that the plugin service also implements httpgrpc.HTTP:
+  //
+  // https://github.com/weaveworks/common/blob/master/httpgrpc/httpgrpc.proto.
+  //
+  // Prefixes should end in a /.
+  //
+  // Registering the same path prefix that is already registered by another plugin
+  // is considered invalid, and will cause the host to terminate the plugin. To avoid
+  // this, use path prefixes that contain the plugin name, such as
+  // /agent/api/v1/prometheus/.
+  repeated string http_path_prefixes = 1;
+
+  // A series of gRPC services to proxy requests for. The name to use here should be
+  // <package name>.<service name>. For example, the name for the Plugin service is
+  // plugin.Plugin.
+  //
+  // Only proxy plugin-specific services for plugin-specific behavior. Registering the
+  // same service already registered by another plugin is invalid, and will cause the
+  // host to terminate the plugin.
+  repeated string grpc_service_proxy = 2;
+}
+
+message StartRequest {
+  // Config is any config string that can be used to initialize the plugin.
+  string config = 1;
+}
+
+message StopRequest {}

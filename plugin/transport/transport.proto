@@ -1,0 +1,20 @@
+syntax = "proto3";
+
+import "google/protobuf/empty.proto";
+
+package transport;
+
+// Tranport is the message transport mechanism used by the host and the plugin to
+// communicate messages.
+//
+// When the plugin host runs a plugin, it will immediately call Initiate and
+// use that bidi stream for all further messages being passed.
+service Transport {
+  rpc Initiate(stream TransportMessage) returns (stream TransportMessage);
+}
+
+// TransportMessage is a message sent on the plugin transport. It is serialized
+// HTTP2 frames.
+message TransportMessage {
+  bytes data = 1;
+}
