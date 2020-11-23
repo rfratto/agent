@@ -1,0 +1,9 @@
+name: Check Dependencies
+description: Check dependencies of a project and create issues if that project has out of date dependencies.
+inputs:
+  repository:
+    description: "repository to check"
+    required: true
+runs:
+  using: 'docker'
+  image: 'Dockerfile'
