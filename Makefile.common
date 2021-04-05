@@ -1,0 +1,70 @@
+SHELL = /usr/bin/env bash
+
+GO_PKG   := github.com/grafana/agent
+ROOT_DIR := $(shell git rev-parse --show-toplevel)
+
+IMAGE_PREFIX ?= grafana
+IMAGE_TAG    ?= $(shell ${ROOT_DIR}/tools/image-tag)
+
+# Setting CROSS_BUILD=true enables cross-compiling binaries for different
+# architectures. When building images, CROSS_BUILD=true uses docker buildx
+# instead of docker, and seego is used instead of go.
+CROSS_BUILD ?= false
+
+BUILD_IN_CONTAINER  ?= true
+BUILD_IMAGE_VERSION := 0.11.0
+BUILD_IMAGE         := $(IMAGE_PREFIX)/agent-build-image:$(BUILD_IMAGE_VERSION)
+
+# Enables the binary to be built with optimizations (i.e., not stripped of
+# symbols).
+RELEASE_BUILD ?= false
+
+# Version info for binaries
+GIT_REVISION := $(shell git rev-parse --short HEAD)
+GIT_BRANCH   := $(shell git rev-parse --abbrev-ref HEAD)
+
+# Build flags
+BUILDPKG        := github.com/grafana/agent/pkg/build
+GO_LDFLAGS      := -X $(VPREFIX).Branch=$(GIT_BRANCH) -X $(VPREFIX).Version=$(IMAGE_TAG) -X $(VPREFIX).Revision=$(GIT_REVISION) -X $(VPREFIX).BuildUser=$(shell whoami)@$(shell hostname) -X $(VPREFIX).BuildDate=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+GO_FLAGS        := -ldflags "-extldflags \"-static\" -s -w $(GO_LDFLAGS)" -tags "netgo static_build" -mod=vendor
+DEBUG_GO_FLAGS  := -gcflags "all=-N -l" -ldflags "-extldflags \"-static\" $(GO_LDFLAGS)" -tags "netgo static_build" -mod=vendor
+CGO_FLAGS       := -ldflags "-s -w $(GO_LDFLAGS)" -tags "netgo" -mod=vendor
+DEBUG_CGO_FLAGS := -gcflags "all=-N -l" -ldflags "-s -w $(GO_LDFLAGS)" -tags "netgo" -mod=vendor
+DOCKER_FLAGS    := --build-arg RELEASE_BUILD=$(RELEASE_BUILD) --build-arg IMAGE_TAG=$(IMAGE_TAG)
+
+ifeq ($(RELEASE_BUILD),false)
+GO_FLAGS = $(DEBUG_GO_FLAGS)
+endif
+
+# Packaging. PACKAGE_RELEASE is the number of times this version of the software
+# was released, starting at 1.
+PACKAGE_VERSION := $(patsubst v%,%,$(RELEASE_TAG))
+PACKAGE_RELEASE := 1
+
+build-image: $(ROOT_DIR)/tools/build-image/.uptodate
+
+$(ROOT_DIR)/tools/build-image/.uptodate: $(ROOT_DIR)/tools/build-image/Dockerfile
+	docker pull $(BUILD_IMAGE) || docker build -t $(BUILD_IMAGE) $(@D)
+	touch $@
+
+$(ROOT_DIR)/tools/build-image/.published: $(ROOT_DIR)/tools/build-image/.uptodate
+ifneq (,$(findstring WIP,$(IMAGE_TAG)))
+	@echo "Cannot push a WIP image, commit changes first"; \
+	false
+endif
+	docker push $(IMAGE_PREFIX)/agent-build-image:$(BUILD_IMAGE_VERSION)
+
+# run_in_container(job)
+define run_in_container =
+	echo $(CURDIR)
+	echo $(ROOT_DIR)
+
+  @mkdir -p $(ROOT_DIR)/.pkg
+	@mkdir -p $(ROOT_DIR)/.cache
+	docker run -i \
+		-v $(ROOT_DIR)/.cache:/go/cache \
+		-v $(ROOT_DIR)/.pkg:/go/pkg \
+		-v $(ROOT_DIR):/go/src/github.com/grafana/agent \
+		-e SRC_PATH=/go/src/github.com/grafana/agent$(CURDIR:$(ROOT_DIR)%=%) \
+		$(BUILD_IMAGE) $(1);
+endef

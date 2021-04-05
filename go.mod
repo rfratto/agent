@@ -26,6 +26,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-community/windows_exporter v0.0.0-00010101000000-000000000000
+	github.com/prometheus-operator/prometheus-operator v0.46.0
 	github.com/prometheus/client_golang v1.9.0
 	github.com/prometheus/common v0.17.0
 	github.com/prometheus/consul_exporter v0.7.2-0.20210127095228-584c6de19f23
@@ -51,6 +52,8 @@ require (
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	k8s.io/apimachinery v0.20.2
+	k8s.io/client-go v12.0.0+incompatible
 )
 
 // Needed for Cortex's dependencies to work properly.
@@ -71,8 +74,8 @@ replace (
 	github.com/Azure/azure-sdk-for-go => github.com/Azure/azure-sdk-for-go v36.2.0+incompatible
 	github.com/hashicorp/consul => github.com/hashicorp/consul v1.5.1
 	github.com/hpcloud/tail => github.com/grafana/tail v0.0.0-20201004203643-7aa4e4a91f03
-	k8s.io/api => k8s.io/api v0.19.4
-	k8s.io/client-go => k8s.io/client-go v0.19.4
+	k8s.io/api => k8s.io/api v0.20.1
+	k8s.io/client-go => k8s.io/client-go v0.20.1
 )
 
 replace github.com/prometheus/prometheus => github.com/grafana/prometheus v1.8.2-0.20210218144103-50bc1c15f0c7

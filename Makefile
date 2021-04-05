@@ -3,67 +3,15 @@
 
 SHELL = /usr/bin/env bash
 
+include ./Makefile.common
+
 #############
 # Variables #
 #############
 
-# When the value of empty, no -mod parameter will be passed to go.
-# For Go 1.13, "readonly" and "vendor" can be used here.
-# In Go >=1.14, "vendor" and "mod" can be used instead.
-GOMOD?=vendor
-ifeq ($(strip $(GOMOD)),) # Is empty?
-	MOD_FLAG=
-	GOLANGCI_ARG=
-else
-	MOD_FLAG=-mod=$(GOMOD)
-	GOLANGCI_ARG=--modules-download-mode=$(GOMOD)
-endif
-
-# Docker image info
-IMAGE_PREFIX ?= grafana
-IMAGE_TAG ?= $(shell ./tools/image-tag)
-
-# Setting CROSS_BUILD=true enables cross-compiling `agent` and `agentctl` for
-# different architectures. When true, docker buildx is used instead of docker,
-# and seego is used for building binaries instead of go.
-CROSS_BUILD ?= false
-
-# Certain aspects of the build are done in containers for consistency.
-# If you have the correct tools installed and want to speed up development,
-# run make BUILD_IN_CONTAINER=false <target>, or you can set BUILD_IN_CONTAINER=true
-# as an environment variable.
-BUILD_IN_CONTAINER ?= true
-BUILD_IMAGE_VERSION := 0.10.0
-BUILD_IMAGE := $(IMAGE_PREFIX)/agent-build-image:$(BUILD_IMAGE_VERSION)
-
-# Enables the binary to be built with optimizations (i.e., doesn't strip the image of
-# symbols, etc.)
-RELEASE_BUILD ?= false
-
-# Version info for binaries
-GIT_REVISION := $(shell git rev-parse --short HEAD)
-GIT_BRANCH := $(shell git rev-parse --abbrev-ref HEAD)
-
 # When running find there's a set of directories we'll never care about; we
 # define the list here to make scanning faster.
 DONT_FIND := -name tools -prune -o -name vendor -prune -o -name .git -prune -o -name .cache -prune -o -name .pkg -prune -o
-
-# Build flags
-VPREFIX        := github.com/grafana/agent/pkg/build
-GO_LDFLAGS     := -X $(VPREFIX).Branch=$(GIT_BRANCH) -X $(VPREFIX).Version=$(IMAGE_TAG) -X $(VPREFIX).Revision=$(GIT_REVISION) -X $(VPREFIX).BuildUser=$(shell whoami)@$(shell hostname) -X $(VPREFIX).BuildDate=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-GO_FLAGS       := -ldflags "-extldflags \"-static\" -s -w $(GO_LDFLAGS)" -tags "netgo static_build" $(MOD_FLAG)
-DEBUG_GO_FLAGS := -gcflags "all=-N -l" -ldflags "-extldflags \"-static\" $(GO_LDFLAGS)" -tags "netgo static_build" $(MOD_FLAG)
-DOCKER_BUILD_FLAGS = --build-arg RELEASE_BUILD=$(RELEASE_BUILD) --build-arg IMAGE_TAG=$(IMAGE_TAG)
-
-# We need a separate set of flags for CGO, where building with -static can
-# cause problems with some C libraries.
-CGO_FLAGS := -ldflags "-s -w $(GO_LDFLAGS)" -tags "netgo" $(MOD_FLAG)
-DEBUG_CGO_FLAGS := -gcflags "all=-N -l" -ldflags "-s -w $(GO_LDFLAGS)" -tags "netgo" $(MOD_FLAG)
-
-# If we're not building the release, use the debug flags instead.
-ifeq ($(RELEASE_BUILD),false)
-GO_FLAGS = $(DEBUG_GO_FLAGS)
-endif
 
 NETGO_CHECK = @strings $@ | grep cgo_stub\\\.go >/dev/null || { \
        rm $@; \
@@ -77,11 +25,6 @@ NETGO_CHECK = @strings $@ | grep cgo_stub\\\.go >/dev/null || { \
 # Protobuf files
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
 PROTO_GOS := $(patsubst %.proto,%.pb.go,$(PROTO_DEFS))
-
-# Packaging
-PACKAGE_VERSION := $(patsubst v%,%,$(RELEASE_TAG))
-# The number of times this version of the software was released, starting with 1 for the first release.
-PACKAGE_RELEASE := 1
 
 ############
 # Commands #
@@ -114,14 +57,7 @@ touch-protos:
 
 %.pb.go: $(PROTO_DEFS)
 ifeq ($(BUILD_IN_CONTAINER),true)
-	@mkdir -p $(shell pwd)/.pkg
-	@mkdir -p $(shell pwd)/.cache
-	docker run -i \
-		-v $(shell pwd)/.cache:/go/cache \
-		-v $(shell pwd)/.pkg:/go/pkg \
-		-v $(shell pwd):/src/agent \
-		-e SRC_PATH=/src/agent \
-		$(BUILD_IMAGE) $@;
+	$(call run_in_container, $@)
 else
 	protoc -I .:./vendor:./$(@D) --gogoslick_out=Mgoogle/protobuf/timestamp.proto=github.com/gogo/protobuf/types,plugins=grpc,paths=source_relative:./ ./$(patsubst %.pb.go,%.proto,$@);
 endif
@@ -164,7 +100,7 @@ install:
 #######################
 
 lint:
-	GO111MODULE=on golangci-lint run -v --timeout=10m $(GOLANGCI_ARG)
+	GO111MODULE=on golangci-lint run -v --timeout=10m --modules-download-mode=vendor
 
 # We have to run test twice: once for all packages with -race and then once more without -race
 # for packages that have known race detection issues
@@ -221,7 +157,7 @@ dist/agent-windows-amd64.exe: seego
 dist/agent-windows-installer.exe: dist/agent-windows-amd64.exe
 	cp dist/agent-windows-amd64.exe ./packaging/windows
 	cp LICENSE ./packaging/windows
-	docker build ./packaging/windows -t windows_nsis 
+	docker build ./packaging/windows -t windows_nsis
 	docker run -e VERSION=${RELEASE_TAG} --rm -t -v $(CURDIR)/dist:/app windows_nsis
 dist/agent-freebsd-amd64: seego
 	@CGO_ENABLED=1 GOOS=freebsd GOARCH=amd64; $(seego) build $(CGO_FLAGS) -o $@ ./cmd/agent
@@ -255,17 +191,6 @@ ifeq ($(BUILD_IN_CONTAINER),true)
 endif
 endif
 
-build-image/.uptodate: build-image/Dockerfile
-	docker pull $(BUILD_IMAGE) || docker build -t $(BUILD_IMAGE) $(@D)
-	touch $@
-
-build-image/.published: build-image/.uptodate
-ifneq (,$(findstring WIP,$(IMAGE_TAG)))
-	@echo "Cannot push a WIP image, commit changes first"; \
-	false
-endif
-	docker push $(IMAGE_PREFIX)/agent-build-image:$(BUILD_IMAGE_VERSION)
-
 packaging/debian-systemd/.uptodate: $(wildcard packaging/debian-systemd/*)
 	docker pull $(IMAGE_PREFIX)/debian-systemd || docker build -t $(IMAGE_PREFIX)/debian-systemd $(@D)
 	touch $@
@@ -289,13 +214,13 @@ container_make = docker run --rm \
 	-e SRC_PATH=/src/agent \
 	-i $(BUILD_IMAGE)
 
-dist-packages-amd64: enforce-release-tag dist/agent-linux-amd64 dist/agentctl-linux-amd64 build-image/.uptodate
+dist-packages-amd64: enforce-release-tag dist/agent-linux-amd64 dist/agentctl-linux-amd64 build-image
 	$(container_make) $@;
-dist-packages-arm64: enforce-release-tag dist/agent-linux-arm64 dist/agentctl-linux-arm64 build-image/.uptodate
+dist-packages-arm64: enforce-release-tag dist/agent-linux-arm64 dist/agentctl-linux-arm64 build-image
 	$(container_make) $@;
-dist-packages-armv6: enforce-release-tag dist/agent-linux-armv6 dist/agentctl-linux-armv6 build-image/.uptodate
+dist-packages-armv6: enforce-release-tag dist/agent-linux-armv6 dist/agentctl-linux-armv6 build-image
 	$(container_make) $@;
-dist-packages-armv7: enforce-release-tag dist/agent-linux-armv7 dist/agentctl-linux-armv7 build-image/.uptodate
+dist-packages-armv7: enforce-release-tag dist/agent-linux-armv7 dist/agentctl-linux-armv7 build-image
 	$(container_make) $@;
 
 else

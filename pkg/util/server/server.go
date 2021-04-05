@@ -74,7 +74,9 @@ func (s *Server) ApplyConfig(cfg Config, wire func(mux *mux.Router, grpc *grpc.S
 		return nil
 	}
 
-	level.Info(s.log).Log("msg", "server configuration changed, restarting server")
+	if s.srv != nil {
+		level.Info(s.log).Log("msg", "server configuration changed, restarting server")
+	}
 
 	// We're going to create a new server, so we need to unregister existing
 	// metrics.
