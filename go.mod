@@ -10,7 +10,6 @@ require (
 	github.com/go-logr/logr v0.4.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/protobuf v1.4.3
-	github.com/golang/snappy v0.0.3 // indirect
 	github.com/google/dnsmasq_exporter v0.0.0-00010101000000-000000000000
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/loki v1.6.2-0.20210205130758-59a34f9867ce
@@ -53,6 +52,7 @@ require (
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
+	k8s.io/api v0.20.5
 	k8s.io/apimachinery v0.20.5
 	sigs.k8s.io/controller-runtime v0.8.3
 )

@@ -57,7 +57,7 @@ Note that CRDs from Prometheus Operator are used since we support (some) of the
 same CRDs from that project.
 
 ```
-pushd ./pkg/operator/api/metrics/v1alpha1
+pushd ./pkg/operator/apis/monitoring/v1alpha1
 controller-gen object paths=.
 controller-gen crd:crdVersions=v1 paths=. output:crd:dir=../../../../../production/operator/crds
 popd
