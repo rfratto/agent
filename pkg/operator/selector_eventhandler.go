@@ -2,6 +2,7 @@ package operator
 
 import (
 	"context"
+	"fmt"
 	"sync"
 	"time"
 
@@ -33,23 +34,36 @@ type EnqueueRequestForSelector struct {
 
 // Create implements handler.EventHandler.
 func (e *EnqueueRequestForSelector) Create(ev event.CreateEvent, q workqueue.RateLimitingInterface) {
+	level.Debug(e.logger(ev.Object)).Log("msg", "got create for object")
 	e.handleEvent(ev.Object, q)
 }
 
 // Update implements handler.EventHandler.
 func (e *EnqueueRequestForSelector) Update(ev event.UpdateEvent, q workqueue.RateLimitingInterface) {
+	level.Debug(e.logger(ev.ObjectNew)).Log("msg", "got update for object")
 	e.handleEvent(ev.ObjectOld, q)
 	e.handleEvent(ev.ObjectNew, q)
 }
 
 // Delete implements handler.EventHandler.
 func (e *EnqueueRequestForSelector) Delete(ev event.DeleteEvent, q workqueue.RateLimitingInterface) {
+	level.Debug(e.logger(ev.Object)).Log("msg", "got delete for object")
 	e.handleEvent(ev.Object, q)
 }
 
 // Generic implements handler.EventHandler.
 func (e *EnqueueRequestForSelector) Generic(ev event.GenericEvent, q workqueue.RateLimitingInterface) {
+	level.Debug(e.logger(ev.Object)).Log("msg", "got generic event for object")
 	e.handleEvent(ev.Object, q)
+}
+
+func (e *EnqueueRequestForSelector) logger(obj client.Object) log.Logger {
+	gvk := obj.GetObjectKind().GroupVersionKind()
+	return log.With(
+		e.Log,
+		"kind", fmt.Sprintf("%s/%s.%s", gvk.Group, gvk.Version, gvk.Kind),
+		"key", client.ObjectKeyFromObject(obj),
+	)
 }
 
 func (e *EnqueueRequestForSelector) handleEvent(obj client.Object, q workqueue.RateLimitingInterface) {

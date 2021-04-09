@@ -3,7 +3,40 @@ kind: GrafanaAgent
 metadata:
   name: grafana-agent-example
   labels:
-    cluster: prod
-spec: {}
+    app: grafana-agent-example
+spec:
+  version: v0.14.0-rc.0
+  prometheus:
+    instanceSelector:
+      matchLabels:
+        agent: grafana-agent-example
 
+---
 
+apiVersion: monitoring.grafana.com/v1alpha1
+kind: PrometheusInstance
+metadata:
+  name: primary
+  labels:
+    agent: grafana-agent-example
+spec:
+  remoteWrite:
+  - url: http://cortex:9009/api/prom/push
+  serviceMonitorSelector:
+    matchLabels:
+      instance: primary
+
+---
+
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: self-monitor
+  labels:
+    instance: primary
+spec:
+  selector:
+    matchLabels:
+      app: grafana-agent-example
+  endpoints:
+  - port: http-metrics

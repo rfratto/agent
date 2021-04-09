@@ -475,3 +475,13 @@ type PrometheusInstanceSpec struct {
 	// going to break Grafana Agent after the upgrade.
 	AdditionalScrapeConfigs *v1.SecretKeySelector `json:"additionalScrapeConfigs,omitempty"`
 }
+
+// +kubebuilder:object:root=true
+
+// PrometheusInstanceList is a list of PrometheusInsatnce.
+type PrometheusInstanceList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	// Items is the list of PrometheusInstance.
+	Items []*PrometheusInstance `json:"items"`
+}

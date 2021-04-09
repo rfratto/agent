@@ -11,22 +11,16 @@ import (
 	clog "sigs.k8s.io/controller-runtime/pkg/log"
 )
 
-// Logger implements both the go-kit Logger interface and the go-logr Logger
-// interface.
-type Logger interface {
-	log.Logger
-	logr.Logger
-}
-
-// Wrap wraps a log.Logger into a Logger.
-func Wrap(l log.Logger) Logger {
+// Wrap wraps a log.Logger into a logr.Logger.
+func Wrap(l log.Logger) logr.Logger {
 	return &goKitLogger{l: l}
 }
 
-// FromContext returns a Logger from a context. Panics if the context doesn't
+// FromContext returns a log.Logger from a context. Panics if the context doesn't
 // have a Logger set.
-func FromContext(ctx context.Context, kvps ...interface{}) Logger {
-	return clog.FromContext(ctx, kvps...).(Logger)
+func FromContext(ctx context.Context, kvps ...interface{}) log.Logger {
+	gkl := clog.FromContext(ctx, kvps...).(*goKitLogger)
+	return gkl.namedLogger()
 }
 
 type goKitLogger struct {
