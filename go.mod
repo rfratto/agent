@@ -14,6 +14,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/loki v1.6.2-0.20210205130758-59a34f9867ce
 	github.com/hashicorp/consul/api v1.8.1
+	github.com/hashicorp/go-getter v1.5.3
 	github.com/jsternberg/zap-logfmt v1.2.0
 	github.com/justwatchcom/elasticsearch_exporter v1.1.0
 	github.com/miekg/dns v1.1.41
@@ -54,6 +55,7 @@ require (
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
 	k8s.io/api v0.20.5
 	k8s.io/apimachinery v0.20.5
+	k8s.io/client-go v8.0.0+incompatible
 	sigs.k8s.io/controller-runtime v0.8.3
 )
 
