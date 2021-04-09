@@ -6,7 +6,7 @@ import (
 	cortex_log "github.com/cortexproject/cortex/pkg/util/log"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
-	"github.com/go-logr/logr"
+	"github.com/grafana/agent/cmd/agent-operator/internal/logutil"
 	controller "sigs.k8s.io/controller-runtime"
 )
 
@@ -20,62 +20,14 @@ func setupLogger(l log.Logger, cfg *Config) log.Logger {
 	}
 	l = newLogger
 
-	// Logs made globally are wrapped so they have a different caller level than
-	// the manager logger does. We set these up first so our local logger can be
-	// given the default caller depth.
-	var (
-		globalLogger  = &loggrAdapter{l: log.With(l, "caller", log.Caller(5))}
-		managerLogger = &loggrAdapter{l: log.With(l, "caller", log.Caller(4))}
-	)
-	l = log.With(l, "caller", log.DefaultCaller)
+	adapterLogger := logutil.Wrap(l)
+
+	// NOTE: we don't set up a caller field here, unlike the normal agent.
+	// There's too many multiple nestings of the logger that prevent getting the
+	// caller from working properly.
 
 	// Set up the global logger and the controller-local logger.
-	controller.SetLogger(globalLogger)
-	cfg.Controller.Logger = managerLogger
+	controller.SetLogger(adapterLogger)
+	cfg.Controller.Logger = adapterLogger
 	return l
-}
-
-// loggrAdapter implements logr.Logger for go-kit logging. The only log levels
-// are info and error, and verbosity information is ignored.
-type loggrAdapter struct {
-	name string
-	l    log.Logger
-}
-
-func (a *loggrAdapter) Enabled() bool { return true }
-
-func (a *loggrAdapter) Info(msg string, keysAndValues ...interface{}) {
-	var args []interface{}
-	if a.name != "" {
-		args = append(args, "name", a.name)
-	}
-	args = append(args, "msg", msg)
-	args = append(args, keysAndValues...)
-	level.Info(a.l).Log(args...)
-}
-
-func (a *loggrAdapter) Error(err error, msg string, keysAndValues ...interface{}) {
-	var args []interface{}
-	if a.name != "" {
-		args = append(args, "name", a.name)
-	}
-	args = append(args, "msg", msg, "err", err)
-	args = append(args, keysAndValues...)
-	level.Error(a.l).Log(args...)
-}
-
-func (a *loggrAdapter) V(level int) logr.Logger {
-	return a
-}
-
-func (a *loggrAdapter) WithValues(keysAndValues ...interface{}) logr.Logger {
-	return &loggrAdapter{name: a.name, l: log.With(a.l, keysAndValues...)}
-}
-
-func (a *loggrAdapter) WithName(name string) logr.Logger {
-	newName := name
-	if a.name != "" {
-		newName = a.name + "." + name
-	}
-	return &loggrAdapter{name: newName, l: a.l}
 }

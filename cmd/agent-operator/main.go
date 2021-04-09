@@ -14,8 +14,7 @@ import (
 	controller "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	clog "sigs.k8s.io/controller-runtime/pkg/log"
-
+	"github.com/grafana/agent/cmd/agent-operator/internal/logutil"
 	grafana_v1alpha1 "github.com/grafana/agent/pkg/operator/apis/monitoring/v1alpha1"
 	promop_v1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
@@ -114,12 +113,12 @@ type reconciler struct {
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (controller.Result, error) {
-	l := clog.FromContext(ctx).WithValues("grafana-agent", req.NamespacedName)
-	l.Info("reconciling grafana-agent")
+	l := logutil.FromContext(ctx, "grafana-agent", req.NamespacedName)
+	level.Info(l).Log("msg", "reconciling grafana-agent")
 
 	var agent grafana_v1alpha1.GrafanaAgent
 	if err := r.Get(ctx, req.NamespacedName, &agent); err != nil {
-		l.Error(err, "unable to get grafana-agent")
+		level.Error(l).Log("msg", "unable to get grafana-agent")
 		return controller.Result{}, nil
 	}
 
