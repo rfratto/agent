@@ -325,6 +325,8 @@ type QueueConfig struct {
 	MinBackoff string `json:"minBackoff,omitempty"`
 	// MaxBackoff is the maximum retry delay.
 	MaxBackoff string `json:"maxBackoff,omitempty"`
+	// RetryOnRateLimit retries requests when encountering rate limits.
+	RetryOnRateLimit bool `json:"retryOnRateLimit,omitempty"`
 }
 
 // MetadataConfig configures the sending of series metadata to remote storage.
