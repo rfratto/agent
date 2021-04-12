@@ -22,6 +22,9 @@ import (
 	"github.com/grafana/agent/pkg/operator"
 	grafana_v1alpha1 "github.com/grafana/agent/pkg/operator/apis/monitoring/v1alpha1"
 	promop_v1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+
+	// Needed for clients.
+	_ "k8s.io/client-go/plugin/pkg/client/auth"
 )
 
 // Config controls the configuration of the operator.

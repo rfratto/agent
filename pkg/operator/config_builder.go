@@ -36,11 +36,16 @@ func BuildConfig(agent *grafana.GrafanaAgent, proms []PrometheusInstance) (yaml.
 		},
 	})
 
+	global, err := buildPrometheusGlobal(agent)
+	if err != nil {
+		return nil, err
+	}
+
 	ms = append(ms, yaml.MapItem{
 		Key: "prometheus",
 		Value: yaml.MapSlice{
 			{Key: "wal_directory", Value: "/var/lib/grafana-agent"},
-			{Key: "global", Value: buildPrometheusGlobal(agent)},
+			{Key: "global", Value: global},
 			{Key: "configs", Value: nil}, // TODO(rfratto): generate
 		},
 	})
