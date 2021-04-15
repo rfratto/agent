@@ -375,6 +375,157 @@ spec:
                         type: array
                     type: object
                 type: object
+              apiServer:
+                description: APIServerConfig allows specifying a host and auth methods to access the Kubernetes API server. If left empty, the Agent will assume that it is running inside of the cluster and will discover API servers automatically and use the pod's CA certificate and bearer token file at /var/run/secrets/kubernetes.io/serviceaccount.
+                properties:
+                  basicAuth:
+                    description: BasicAuth allow an endpoint to authenticate over basic authentication
+                    properties:
+                      password:
+                        description: The secret in the service monitor namespace that contains the password for authentication.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must be a valid secret key.
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                      username:
+                        description: The secret in the service monitor namespace that contains the username for authentication.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must be a valid secret key.
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                    type: object
+                  bearerToken:
+                    description: Bearer token for accessing apiserver.
+                    type: string
+                  bearerTokenFile:
+                    description: File to read bearer token for accessing apiserver.
+                    type: string
+                  host:
+                    description: Host of apiserver. A valid string consisting of a hostname or IP followed by an optional port number
+                    type: string
+                  tlsConfig:
+                    description: TLS Config to use for accessing apiserver.
+                    properties:
+                      ca:
+                        description: Struct containing the CA cert to use for the targets.
+                        properties:
+                          configMap:
+                            description: ConfigMap containing data to use for the targets.
+                            properties:
+                              key:
+                                description: The key to select.
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                                type: string
+                              optional:
+                                description: Specify whether the ConfigMap or its key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                          secret:
+                            description: Secret containing data to use for the targets.
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must be a valid secret key.
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                        type: object
+                      caFile:
+                        description: Path to the CA cert in the Prometheus container to use for the targets.
+                        type: string
+                      cert:
+                        description: Struct containing the client cert file for the targets.
+                        properties:
+                          configMap:
+                            description: ConfigMap containing data to use for the targets.
+                            properties:
+                              key:
+                                description: The key to select.
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                                type: string
+                              optional:
+                                description: Specify whether the ConfigMap or its key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                          secret:
+                            description: Secret containing data to use for the targets.
+                            properties:
+                              key:
+                                description: The key of the secret to select from.  Must be a valid secret key.
+                                type: string
+                              name:
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                                type: string
+                              optional:
+                                description: Specify whether the Secret or its key must be defined
+                                type: boolean
+                            required:
+                            - key
+                            type: object
+                        type: object
+                      certFile:
+                        description: Path to the client cert file in the Prometheus container for the targets.
+                        type: string
+                      insecureSkipVerify:
+                        description: Disable target certificate validation.
+                        type: boolean
+                      keyFile:
+                        description: Path to the client key file in the Prometheus container for the targets.
+                        type: string
+                      keySecret:
+                        description: Secret containing the client key file for the targets.
+                        properties:
+                          key:
+                            description: The key of the secret to select from.  Must be a valid secret key.
+                            type: string
+                          name:
+                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?'
+                            type: string
+                          optional:
+                            description: Specify whether the Secret or its key must be defined
+                            type: boolean
+                        required:
+                        - key
+                        type: object
+                      serverName:
+                        description: Used to verify the hostname for the targets.
+                        type: string
+                    type: object
+                required:
+                - host
+                type: object
               configMaps:
                 description: ConfigMaps is a liset of config maps in the same namespace as the GrafanaAgent object which will be mounted into each running Grafana Agent pod. The secrets are mounted into /etc/grafana-agent/configmaps/<configmap-name>.
                 items:
@@ -1845,6 +1996,12 @@ spec:
                   - name
                   type: object
                 type: array
+              logFormat:
+                description: LogFormat controls the logging format of the generated pods. Defaults to "logfmt" if not set.
+                type: string
+              logLevel:
+                description: LogLevel controls the log level of the generated pods. Defaults to "info" if not set.
+                type: string
               nodeSelector:
                 additionalProperties:
                   type: string
@@ -2066,6 +2223,9 @@ spec:
                             minShards:
                               description: MinShards is the minimum number of shards, i.e. amount of concurrency.
                               type: integer
+                            retryOnRateLimit:
+                              description: RetryOnRateLimit retries requests when encountering rate limits.
+                              type: boolean
                           type: object
                         remoteTimeout:
                           description: RemoteTimeout is the timeout for requests to the remote_write endpoint.
@@ -2117,10 +2277,10 @@ spec:
                           description: TLSConfig to use for remote_write.
                           properties:
                             ca:
-                              description: CA is the struct containing the CA cert to use for the targets.
+                              description: Struct containing the CA cert to use for the targets.
                               properties:
                                 configMap:
-                                  description: ConfigMap which contains data to use for the targets.
+                                  description: ConfigMap containing data to use for the targets.
                                   properties:
                                     key:
                                       description: The key to select.
@@ -2135,7 +2295,7 @@ spec:
                                   - key
                                   type: object
                                 secret:
-                                  description: Secret which contains data to use for the targets.
+                                  description: Secret containing data to use for the targets.
                                   properties:
                                     key:
                                       description: The key of the secret to select from.  Must be a valid secret key.
@@ -2151,13 +2311,13 @@ spec:
                                   type: object
                               type: object
                             caFile:
-                              description: CAFile is the path to the CA cert in the Grafana Agent container to use for the targets.
+                              description: Path to the CA cert in the Prometheus container to use for the targets.
                               type: string
                             cert:
-                              description: Cert is the struct containing the client cert for the targets.
+                              description: Struct containing the client cert file for the targets.
                               properties:
                                 configMap:
-                                  description: ConfigMap which contains data to use for the targets.
+                                  description: ConfigMap containing data to use for the targets.
                                   properties:
                                     key:
                                       description: The key to select.
@@ -2172,7 +2332,7 @@ spec:
                                   - key
                                   type: object
                                 secret:
-                                  description: Secret which contains data to use for the targets.
+                                  description: Secret containing data to use for the targets.
                                   properties:
                                     key:
                                       description: The key of the secret to select from.  Must be a valid secret key.
@@ -2188,16 +2348,16 @@ spec:
                                   type: object
                               type: object
                             certFile:
-                              description: CertFile is the path to the client cert file in the Grafana Agent container to use for the targets.
+                              description: Path to the client cert file in the Prometheus container for the targets.
                               type: string
                             insecureSkipVerify:
-                              description: InsecureSkipVerify disables target certificate validation.
+                              description: Disable target certificate validation.
                               type: boolean
                             keyFile:
-                              description: KeyFile is the path to the client key file in the Grafana Agent container to use for the targets.
+                              description: Path to the client key file in the Prometheus container for the targets.
                               type: string
                             keySecret:
-                              description: KeySecret is the secret containing the client key for the targets.
+                              description: Secret containing the client key file for the targets.
                               properties:
                                 key:
                                   description: The key of the secret to select from.  Must be a valid secret key.
@@ -2212,7 +2372,7 @@ spec:
                               - key
                               type: object
                             serverName:
-                              description: ServerName is used to verify the hostname for the targets.
+                              description: Used to verify the hostname for the targets.
                               type: string
                           type: object
                         url:
@@ -2221,31 +2381,31 @@ spec:
                         writeRelabelConfigs:
                           description: WriteRelabelConfigs holds relabel_configs to relabel samples before they are sent to the remote_write endpoint.
                           items:
-                            description: 'RelabelConfig allows dynamic rewriting of the label set, being applied to samples before ingestion. More info: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs'
+                            description: 'RelabelConfig allows dynamic rewriting of the label set, being applied to samples before ingestion. It defines `<metric_relabel_configs>`-section of Prometheus configuration. More info: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs'
                             properties:
                               action:
-                                description: action to perform based on regex matching. Default is 'replace'.
+                                description: Action to perform based on regex matching. Default is 'replace'
                                 type: string
                               modulus:
                                 description: Modulus to take of the hash of the source label values.
                                 format: int64
                                 type: integer
                               regex:
-                                description: Regex is the regular expression against which the extracted value is matched. Default is '(.*)'.
+                                description: Regular expression against which the extracted value is matched. Default is '(.*)'
                                 type: string
                               replacement:
-                                description: Replacement value against which a regex replace is performed if the regular expression matches. Regex capture groups are available. Default is '$1'.
+                                description: Replacement value against which a regex replace is performed if the regular expression matches. Regex capture groups are available. Default is '$1'
                                 type: string
                               separator:
-                                description: Separator placed between concatenated source label values. Default is ';'.
+                                description: Separator placed between concatenated source label values. default is ';'.
                                 type: string
                               sourceLabels:
-                                description: SourceLabels selects values from existing labels. Their content is contatenated into a single string using the configured separator and matched against the configured regular expression for the replace, keep, and drop actions.
+                                description: The source labels select values from existing labels. Their content is concatenated using the configured separator and matched against the configured regular expression for the replace, keep, and drop actions.
                                 items:
                                   type: string
                                 type: array
                               targetLabel:
-                                description: TargetLabel is the label to which the resulting value is written in a replace action. Required for replace actions. Regex capture groups are available.
+                                description: Label to which the resulting value is written in a replace action. It is mandatory for replace actions. Regex capture groups are available.
                                 type: string
                             type: object
                           type: array

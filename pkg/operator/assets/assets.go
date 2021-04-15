@@ -5,7 +5,7 @@ package assets
 import (
 	"fmt"
 
-	"github.com/grafana/agent/pkg/operator/apis/monitoring/v1alpha1"
+	prom_v1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	v1 "k8s.io/api/core/v1"
 )
 
@@ -44,7 +44,7 @@ func KeyForConfigMap(namespace string, sel *v1.ConfigMapKeySelector) Key {
 }
 
 // KeyForSelector retrives the key for a SecretOrConfigMap.
-func KeyForSelector(namespace string, sel *v1alpha1.SecretOrConfigMap) Key {
+func KeyForSelector(namespace string, sel *prom_v1.SecretOrConfigMap) Key {
 	switch {
 	case sel.ConfigMap != nil:
 		return KeyForConfigMap(namespace, sel.ConfigMap)

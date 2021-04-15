@@ -27,7 +27,7 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0
 	github.com/pkg/errors v0.9.1
 	github.com/prometheus-community/windows_exporter v0.0.0-00010101000000-000000000000
-	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.46.0
+	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.47.0
 	github.com/prometheus/client_golang v1.10.0
 	github.com/prometheus/common v0.20.0
 	github.com/prometheus/consul_exporter v0.7.2-0.20210127095228-584c6de19f23

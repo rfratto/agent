@@ -22,6 +22,8 @@ import (
 	"github.com/grafana/agent/pkg/operator"
 	grafana_v1alpha1 "github.com/grafana/agent/pkg/operator/apis/monitoring/v1alpha1"
 	promop_v1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	apps_v1 "k8s.io/api/apps/v1"
+	core_v1 "k8s.io/api/core/v1"
 
 	// Needed for clients.
 	_ "k8s.io/client-go/plugin/pkg/client/auth"
@@ -55,6 +57,8 @@ func main() {
 	cfg.Controller.Scheme = runtime.NewScheme()
 
 	for _, add := range []func(*runtime.Scheme) error{
+		core_v1.AddToScheme,
+		apps_v1.AddToScheme,
 		grafana_v1alpha1.AddToScheme,
 		promop_v1.AddToScheme,
 	} {
@@ -83,6 +87,9 @@ func main() {
 
 	err = controller.NewControllerManagedBy(m).
 		For(applyGVK(&grafana_v1alpha1.GrafanaAgent{})).
+		Owns(applyGVK(&core_v1.ConfigMap{})).
+		Owns(applyGVK(&core_v1.Secret{})).
+		Owns(applyGVK(&apps_v1.StatefulSet{})).
 		Watches(watchType(&grafana_v1alpha1.PrometheusInstance{}), eventPromInstances).
 		Watches(watchType(&promop_v1.ServiceMonitor{}), eventServiceMonitor).
 		Watches(watchType(&promop_v1.PodMonitor{}), eventPodMonitor).
@@ -165,6 +172,12 @@ func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (con
 	}
 
 	// TODO(rfratto): do everything now :)
+	// NOTE(rfratto): note that since some jobs/instances will come from other
+	// namespaces and may have their own secrets/configmaps, we need to reflect
+	// all used secrets and configmaps into a custom one used by our deployment.
+	//
+	// Technically we don't need to duplicate secrets that exist in the same
+	// namespace as the Agent pods, but it's better to be consistent here.
 
 	return controller.Result{}, nil
 }

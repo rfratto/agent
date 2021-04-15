@@ -1,6 +1,7 @@
 package v1alpha1
 
 import (
+	prom_v1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
@@ -42,6 +43,16 @@ type GrafanaAgentList struct {
 // GrafanaAgentSpec is a specification of the desired behavior of the Grafana
 // Agent cluster.
 type GrafanaAgentSpec struct {
+	// LogLevel controls the log level of the generated pods. Defaults to "info" if not set.
+	LogLevel string `json:"logLevel,omitempty"`
+	// LogFormat controls the logging format of the generated pods. Defaults to "logfmt" if not set.
+	LogFormat string `json:"logFormat,omitempty"`
+	// APIServerConfig allows specifying a host and auth methods to access the
+	// Kubernetes API server. If left empty, the Agent will assume that it is
+	// running inside of the cluster and will discover API servers automatically
+	// and use the pod's CA certificate and bearer token file at
+	// /var/run/secrets/kubernetes.io/serviceaccount.
+	APIServerConfig *prom_v1.APIServerConfig `json:"apiServer,omitempty"`
 	// PodMetadata configures Labels and Annotations which are propagated to
 	// created Grafana Agent pods.
 	PodMetadata *EmbeddedObjectMetadata `json:"podMetadata,omitempty"`
@@ -197,7 +208,7 @@ type RemoteWriteSpec struct {
 	Headers map[string]string `json:"headers,omitempty"`
 	// WriteRelabelConfigs holds relabel_configs to relabel samples before they are
 	// sent to the remote_write endpoint.
-	WriteRelabelConfigs []RelabelConfig `json:"writeRelabelConfigs,omitempty"`
+	WriteRelabelConfigs []prom_v1.RelabelConfig `json:"writeRelabelConfigs,omitempty"`
 	// BasicAuth for the URL.
 	BasicAuth *BasicAuth `json:"basicAuth,omitempty"`
 	// BearerToken used for remote_write.
@@ -208,41 +219,13 @@ type RemoteWriteSpec struct {
 	// Will be used if SigV4 is defined, even with an empty object.
 	SigV4 *SigV4Config `json:"sigv4,omitempty"`
 	// TLSConfig to use for remote_write.
-	TLSConfig *TLSConfig `json:"tlsConfig,omitempty"`
+	TLSConfig *prom_v1.TLSConfig `json:"tlsConfig,omitempty"`
 	// ProxyURL to proxy requests through. Optional.
 	ProxyURL string `json:"proxyUrl,omitempty"`
 	// QueueConfig allows tuning of the remote_write queue parameters.
 	QueueConfig *QueueConfig `json:"queueConfig,omitempty"`
 	// MetadataConfig configures the sending of series metadata to remote storage.
 	MetadataConfig *MetadataConfig `json:"metadataConfig,omitempty"`
-}
-
-// RelabelConfig allows dynamic rewriting of the label set, being applied to
-// samples before ingestion.
-// More info: https://prometheus.io/docs/prometheus/latest/configuration/configuration/#metric_relabel_configs
-type RelabelConfig struct {
-	// SourceLabels selects values from existing labels. Their content is
-	// contatenated into a single string using the configured separator and
-	// matched against the configured regular expression for the replace, keep,
-	// and drop actions.
-	SourceLabels []string `json:"sourceLabels,omitempty"`
-	// Separator placed between concatenated source label values. Default is ';'.
-	Separator string `json:"separator,omitempty"`
-	// TargetLabel is the label to which the resulting value is written in a
-	// replace action. Required for replace actions. Regex capture groups are
-	// available.
-	TargetLabel string `json:"targetLabel,omitempty"`
-	// Regex is the regular expression against which the extracted value is
-	// matched. Default is '(.*)'.
-	Regex string `json:"regex,omitempty"`
-	// Modulus to take of the hash of the source label values.
-	Modulus uint64 `json:"modulus,omitempty"`
-	// Replacement value against which a regex replace is performed if the
-	// regular expression matches. Regex capture groups are available. Default is
-	// '$1'.
-	Replacement string `json:"replacement,omitempty"`
-	// action to perform based on regex matching. Default is 'replace'.
-	Action string `json:"action,omitempty"`
 }
 
 // BasicAuth allows an endpoint to authenticate over basic authentication.
@@ -272,39 +255,6 @@ type SigV4Config struct {
 	// RoleARN is the AWS Role ARN to use for authentication, as an alternative
 	// for using the AWS API keys.
 	RoleARN string `json:"roleARN,omitempty"`
-}
-
-// TLSconfig extends the safe TLS configuration with file parameters.
-type TLSConfig struct {
-	SafeTLSConfig `json:",inline"`
-	// CAFile is the path to the CA cert in the Grafana Agent container to use for the targets.
-	CAFile string `json:"caFile,omitempty"`
-	// CertFile is the path to the client cert file in the Grafana Agent container to use for the targets.
-	CertFile string `json:"certFile,omitempty"`
-	// KeyFile is the path to the client key file in the Grafana Agent container to use for the targets.
-	KeyFile string `json:"keyFile,omitempty"`
-}
-
-// SafeTLSConfig specifies safe TLS configuration parameters.
-type SafeTLSConfig struct {
-	// CA is the struct containing the CA cert to use for the targets.
-	CA SecretOrConfigMap `json:"ca,omitempty"`
-	// Cert is the struct containing the client cert for the targets.
-	Cert SecretOrConfigMap `json:"cert,omitempty"`
-	// KeySecret is the secret containing the client key for the targets.
-	KeySecret *v1.SecretKeySelector `json:"keySecret,omitempty"`
-	// ServerName is used to verify the hostname for the targets.
-	ServerName string `json:"serverName,omitempty"`
-	// InsecureSkipVerify disables target certificate validation.
-	InsecureSkipVerify bool `json:"insecureSkipVerify,omitempty"`
-}
-
-// SecretOrConfigMap allows specifying data as either a Secret or a ConfigMap. Fields are mutually exclusive.
-type SecretOrConfigMap struct {
-	// Secret which contains data to use for the targets.
-	Secret *v1.SecretKeySelector `json:"secret,omitempty"`
-	// ConfigMap which contains data to use for the targets.
-	ConfigMap *v1.ConfigMapKeySelector `json:"configMap,omitempty"`
 }
 
 // QueueConfig allows the tuning of remote_write queue_config parameters.
@@ -442,6 +392,22 @@ type PrometheusInstance struct {
 
 // PrometheusInstanceSpec controls how an individual instance will be used to discover PodMonitors.
 type PrometheusInstanceSpec struct {
+	// WALTruncateFrequency specifies how frequently the WAL truncation process
+	// should run. Higher values causes the WAL to increase and for old series to
+	// stay in the WAL for longer, but reduces the chances of data loss when
+	// remote_write is failing for longer than the given frequency.
+	WALTruncateFrequency string `json:"walTruncateFrequency,omitempty"`
+	// MinWALTime is the minimum amount of time series and samples may exist in
+	// the WAL before being considered for deletion.
+	MinWALTime string `json:"minWALTime,omitempty"`
+	// MaxWALTime is the maximum amount of time series and asmples may exist in
+	// the WAL before being forcibly deleted.
+	MaxWALTime string `json:"maxWALTime,omitempty"`
+	// RemoteFlushDeadline is the deadline for flushing data when an instance
+	// shuts down.
+	RemoteFlushDeadline string `json:"remoteFlushDeadline,omitempty"`
+	// WriteStaleOnShutdown writes staleness markers on shutdown for all series.
+	WriteStaleOnShutdown *bool `json:"writeStaleOnShutdown,omitempty"`
 	// ServiceMonitorSelector determines which ServiceMonitors should be selected
 	// for target discovery.
 	ServiceMonitorSelector *metav1.LabelSelector `json:"serviceMonitorSelector,omitempty"`

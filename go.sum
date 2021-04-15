@@ -1343,6 +1343,8 @@ github.com/pquerna/cachecontrol v0.0.0-20200819021114-67c6ae64274f h1:JDEmUDtyiL
 github.com/pquerna/cachecontrol v0.0.0-20200819021114-67c6ae64274f/go.mod h1:hoLfEwdY11HjRfKFH6KqnPsfxlo3BP6bJehpDv8t6sQ=
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.46.0 h1:J+aQlaDVIemgZDR1f/48MBaiA7rDTm6OyKSRhDX2ZTY=
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.46.0/go.mod h1:3WYi4xqXxGGXWDdQIITnLNmuDzO5n6wYva9spVhR4fg=
+github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.47.0 h1:xjbMyky/ywLg+SoqYXneHRqcu+qILajXmqDjNd5sseY=
+github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.47.0/go.mod h1:3WYi4xqXxGGXWDdQIITnLNmuDzO5n6wYva9spVhR4fg=
 github.com/prometheus/alertmanager v0.19.0/go.mod h1:Eyp94Yi/T+kdeb2qvq66E3RGuph5T/jm/RBVh4yz1xo=
 github.com/prometheus/alertmanager v0.21.0/go.mod h1:h7tJ81NA0VLWvWEayi1QltevFkLF3KxmC/malTcT8Go=
 github.com/prometheus/alertmanager v0.21.1-0.20200911160112-1fdff6b3f939/go.mod h1:imXRHOP6QTsE0fFsIsAV/cXimS32m7gVZOiUj11m6Ig=

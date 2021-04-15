@@ -683,7 +683,7 @@ github.com/pquerna/cachecontrol/cacheobject
 github.com/prometheus-community/windows_exporter/collector
 github.com/prometheus-community/windows_exporter/config
 github.com/prometheus-community/windows_exporter/exporter
-# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.46.0
+# github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.47.0
 ## explicit
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring
 github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1
