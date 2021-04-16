@@ -17,6 +17,18 @@ Now run the operator:
 go run ./cmd/agent-operator
 ```
 
+## Run Prometheus
+
+An example Prometheus server is provided in `./example-prometheus.yaml`. Deploy
+it with the following:
+
+```
+kubectl apply -f ./cmd/agent-operator/example-prometheus.yaml
+```
+
+You can view it at http://prometheus.k3d.localhost:30080 once the k3d cluster is
+running.
+
 ## Apply the CRDs
 
 Generated CRDs used by the operator can be found in [the Production

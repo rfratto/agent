@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"flag"
 	"fmt"
 	"os"
@@ -10,7 +9,6 @@ import (
 	"github.com/go-kit/kit/log/level"
 	"github.com/prometheus/common/version"
 	"github.com/weaveworks/common/logging"
-	"k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	controller "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -18,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/grafana/agent/cmd/agent-operator/internal/logutil"
 	"github.com/grafana/agent/pkg/operator"
 	grafana_v1alpha1 "github.com/grafana/agent/pkg/operator/apis/monitoring/v1alpha1"
 	promop_v1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -80,6 +77,7 @@ func main() {
 		eventServiceMonitor = &operator.EnqueueRequestForSelector{Client: m.GetClient(), Log: logger}
 		eventPodMonitor     = &operator.EnqueueRequestForSelector{Client: m.GetClient(), Log: logger}
 		eventProbe          = &operator.EnqueueRequestForSelector{Client: m.GetClient(), Log: logger}
+		eventSecret         = &operator.EnqueueRequestForSelector{Client: m.GetClient(), Log: logger}
 	)
 
 	applyGVK := func(obj client.Object) client.Object { return applyGVK(obj, m) }
@@ -87,13 +85,14 @@ func main() {
 
 	err = controller.NewControllerManagedBy(m).
 		For(applyGVK(&grafana_v1alpha1.GrafanaAgent{})).
-		Owns(applyGVK(&core_v1.ConfigMap{})).
+		Owns(applyGVK(&core_v1.Service{})).
 		Owns(applyGVK(&core_v1.Secret{})).
 		Owns(applyGVK(&apps_v1.StatefulSet{})).
 		Watches(watchType(&grafana_v1alpha1.PrometheusInstance{}), eventPromInstances).
 		Watches(watchType(&promop_v1.ServiceMonitor{}), eventServiceMonitor).
 		Watches(watchType(&promop_v1.PodMonitor{}), eventPodMonitor).
 		Watches(watchType(&promop_v1.Probe{}), eventProbe).
+		Watches(watchType(&core_v1.Secret{}), eventSecret).
 		Complete(&reconciler{
 			Client: m.GetClient(),
 			scheme: m.GetScheme(),
@@ -102,6 +101,7 @@ func main() {
 			eventServiceMonitor: eventServiceMonitor,
 			eventPodMonitor:     eventPodMonitor,
 			eventProbe:          eventProbe,
+			eventSecret:         eventSecret,
 		})
 	if err != nil {
 		level.Error(logger).Log("msg", "unable to create controller", "err", err)
@@ -138,48 +138,6 @@ func loadConfig(l log.Logger) *Config {
 	}
 
 	return &cfg
-}
-
-type reconciler struct {
-	client.Client
-	scheme *runtime.Scheme
-
-	// Various event handlers that can trigger reconciliation for watched
-	// resources.
-	eventPromInstances  *operator.EnqueueRequestForSelector
-	eventServiceMonitor *operator.EnqueueRequestForSelector
-	eventPodMonitor     *operator.EnqueueRequestForSelector
-	eventProbe          *operator.EnqueueRequestForSelector
-}
-
-func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (controller.Result, error) {
-	l := logutil.FromContext(ctx)
-	level.Info(l).Log("msg", "reconciling grafana-agent")
-
-	var agent grafana_v1alpha1.GrafanaAgent
-	if err := r.Get(ctx, req.NamespacedName, &agent); errors.IsNotFound(err) {
-		level.Debug(l).Log("msg", "detected deleted agent, cleaning up watchers")
-
-		r.eventPromInstances.Notify(req.NamespacedName, nil)
-		r.eventServiceMonitor.Notify(req.NamespacedName, nil)
-		r.eventPodMonitor.Notify(req.NamespacedName, nil)
-		r.eventProbe.Notify(req.NamespacedName, nil)
-
-		return controller.Result{}, nil
-	} else if err != nil {
-		level.Error(l).Log("msg", "unable to get grafana-agent", "err", err)
-		return controller.Result{}, nil
-	}
-
-	// TODO(rfratto): do everything now :)
-	// NOTE(rfratto): note that since some jobs/instances will come from other
-	// namespaces and may have their own secrets/configmaps, we need to reflect
-	// all used secrets and configmaps into a custom one used by our deployment.
-	//
-	// Technically we don't need to duplicate secrets that exist in the same
-	// namespace as the Agent pods, but it's better to be consistent here.
-
-	return controller.Result{}, nil
 }
 
 // watchType applies the GVK to an object and returns a source to watch it.

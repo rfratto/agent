@@ -295,7 +295,7 @@ func generateSafeTLSConfig(ns string, cfg *prom.SafeTLSConfig) (ms util.Map) {
 }
 
 func pathForKey(key assets.Key) string {
-	return filepath.Join("/var/lib/grafana-agent", string(key))
+	return filepath.Join("/var/lib/grafana-agent/secrets", SanitizeLabelName(string(key)))
 }
 
 func generatePrometheusInstance(
@@ -360,7 +360,6 @@ func generatePrometheusInstance(
 				return nil, fmt.Errorf("failed generating service monitor %s/%s: %w", sMon.Namespace, sMon.Name, err)
 			}
 			scrapeConfigs = append(scrapeConfigs, gen)
-
 		}
 	}
 	for _, pMon := range cfg.PodMonitors {
@@ -418,6 +417,8 @@ func generatePrometheusInstance(
 		}
 		scrapeConfigs = append(scrapeConfigs, additionalScrapeConfigs...)
 	}
+
+	ms.Set("scrape_configs", scrapeConfigs)
 
 	if len(spec.RemoteWrite) > 0 {
 		var remoteWrites []util.Map
@@ -525,7 +526,7 @@ func generateServiceMonitor(
 	for _, k := range labelKeys {
 		relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 			Action:       "keep",
-			SourceLabels: []string{"__meta_kubernetes_service_label_" + sanitizeLabelName(k)},
+			SourceLabels: []string{"__meta_kubernetes_service_label_" + SanitizeLabelName(k)},
 			Regex:        cfg.Spec.Selector.MatchLabels[k],
 		}))
 	}
@@ -537,25 +538,25 @@ func generateServiceMonitor(
 		case metav1.LabelSelectorOpIn:
 			relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 				Action:       "keep",
-				SourceLabels: []string{"__meta_kubernetes_service_label_" + sanitizeLabelName(exp.Key)},
+				SourceLabels: []string{"__meta_kubernetes_service_label_" + SanitizeLabelName(exp.Key)},
 				Regex:        strings.Join(exp.Values, "|"),
 			}))
 		case metav1.LabelSelectorOpNotIn:
 			relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 				Action:       "drop",
-				SourceLabels: []string{"__meta_kubernetes_service_label_" + sanitizeLabelName(exp.Key)},
+				SourceLabels: []string{"__meta_kubernetes_service_label_" + SanitizeLabelName(exp.Key)},
 				Regex:        strings.Join(exp.Values, "|"),
 			}))
 		case metav1.LabelSelectorOpExists:
 			relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 				Action:       "keep",
-				SourceLabels: []string{"__meta_kubernetes_service_labelpresent_" + sanitizeLabelName(exp.Key)},
+				SourceLabels: []string{"__meta_kubernetes_service_labelpresent_" + SanitizeLabelName(exp.Key)},
 				Regex:        "true",
 			}))
 		case metav1.LabelSelectorOpDoesNotExist:
 			relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 				Action:       "drop",
-				SourceLabels: []string{"__meta_kubernetes_service_labelpresent_" + sanitizeLabelName(exp.Key)},
+				SourceLabels: []string{"__meta_kubernetes_service_labelpresent_" + SanitizeLabelName(exp.Key)},
 				Regex:        "true",
 			}))
 		}
@@ -590,14 +591,14 @@ func generateServiceMonitor(
 			SourceLabels: []string{"__meta_kubernetes_endpoint_address_target_kind", "__meta_kubernetes_endpoint_address_target_name"},
 			Separator:    ";",
 			Regex:        "Node;(.*)",
-			Replacement:  "${1}",
+			Replacement:  "$1",
 			TargetLabel:  "node",
 		}),
 		generateRelabelConfig(&prom.RelabelConfig{
 			SourceLabels: []string{"__meta_kubernetes_endpoint_address_target_kind", "__meta_kubernetes_endpoint_address_target_name"},
 			Separator:    ";",
 			Regex:        "Pod;(.*)",
-			Replacement:  "${1}",
+			Replacement:  "$1",
 			TargetLabel:  "pod",
 		}),
 		generateRelabelConfig(&prom.RelabelConfig{
@@ -621,18 +622,18 @@ func generateServiceMonitor(
 	// Relabel targetLabels from Service onto the target.
 	for _, l := range cfg.Spec.TargetLabels {
 		relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
-			SourceLabels: []string{"__meta_kubernetes_service_label_" + sanitizeLabelName(l)},
-			TargetLabel:  sanitizeLabelName(l),
+			SourceLabels: []string{"__meta_kubernetes_service_label_" + SanitizeLabelName(l)},
+			TargetLabel:  SanitizeLabelName(l),
 			Regex:        "(.+)",
-			Replacement:  "${1}",
+			Replacement:  "$1",
 		}))
 	}
 	for _, l := range cfg.Spec.PodTargetLabels {
 		relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
-			SourceLabels: []string{"__meta_kubernetes_pod_label_" + sanitizeLabelName(l)},
-			TargetLabel:  sanitizeLabelName(l),
+			SourceLabels: []string{"__meta_kubernetes_pod_label_" + SanitizeLabelName(l)},
+			TargetLabel:  SanitizeLabelName(l),
 			Regex:        "(.+)",
-			Replacement:  "${1}",
+			Replacement:  "$1",
 		}))
 	}
 
@@ -645,14 +646,14 @@ func generateServiceMonitor(
 	relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 		SourceLabels: []string{"__meta_kubernetes_service_name"},
 		TargetLabel:  "job",
-		Replacement:  "${1}",
+		Replacement:  "$1",
 	}))
 	if cfg.Spec.JobLabel != "" {
 		relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
-			SourceLabels: []string{"__meta_kubernetes_service_label_" + sanitizeLabelName(cfg.Spec.JobLabel)},
+			SourceLabels: []string{"__meta_kubernetes_service_label_" + SanitizeLabelName(cfg.Spec.JobLabel)},
 			TargetLabel:  "job",
 			Regex:        "(.+)",
-			Replacement:  "${1}",
+			Replacement:  "$1",
 		}))
 	}
 
@@ -801,7 +802,8 @@ func initRelabelings() []util.Map {
 	}}
 }
 
-func sanitizeLabelName(name string) string {
+// SanitizeLabelName sanitizes a label name for Prometheus.
+func SanitizeLabelName(name string) string {
 	return invalidLabelCharRE.ReplaceAllString(name, "_")
 }
 
@@ -827,7 +829,7 @@ func generateAddressShardingRelabelingRules(shards int32) []util.Map {
 		}),
 		generateRelabelConfig(&prom.RelabelConfig{
 			SourceLabels: []string{"__tmp_hash"},
-			Regex:        "$(SHARD)",
+			Regex:        "${SHARD}",
 			Action:       "keep",
 		}),
 	}
@@ -928,7 +930,7 @@ func generatePodMonitor(
 	for _, k := range labelKeys {
 		relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 			Action:       "keep",
-			SourceLabels: []string{"__meta_kubernetes_pod_label_" + sanitizeLabelName(k)},
+			SourceLabels: []string{"__meta_kubernetes_pod_label_" + SanitizeLabelName(k)},
 			Regex:        cfg.Spec.Selector.MatchLabels[k],
 		}))
 	}
@@ -940,25 +942,25 @@ func generatePodMonitor(
 		case metav1.LabelSelectorOpIn:
 			relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 				Action:       "keep",
-				SourceLabels: []string{"__meta_kubernetes_pod_label_" + sanitizeLabelName(exp.Key)},
+				SourceLabels: []string{"__meta_kubernetes_pod_label_" + SanitizeLabelName(exp.Key)},
 				Regex:        strings.Join(exp.Values, "|"),
 			}))
 		case metav1.LabelSelectorOpNotIn:
 			relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 				Action:       "drop",
-				SourceLabels: []string{"__meta_kubernetes_pod_label_" + sanitizeLabelName(exp.Key)},
+				SourceLabels: []string{"__meta_kubernetes_pod_label_" + SanitizeLabelName(exp.Key)},
 				Regex:        strings.Join(exp.Values, "|"),
 			}))
 		case metav1.LabelSelectorOpExists:
 			relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 				Action:       "keep",
-				SourceLabels: []string{"__meta_kubernetes_pod_labelpresent_" + sanitizeLabelName(exp.Key)},
+				SourceLabels: []string{"__meta_kubernetes_pod_labelpresent_" + SanitizeLabelName(exp.Key)},
 				Regex:        "true",
 			}))
 		case metav1.LabelSelectorOpDoesNotExist:
 			relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 				Action:       "drop",
-				SourceLabels: []string{"__meta_kubernetes_pod_labelpresent_" + sanitizeLabelName(exp.Key)},
+				SourceLabels: []string{"__meta_kubernetes_pod_labelpresent_" + SanitizeLabelName(exp.Key)},
 				Regex:        "true",
 			}))
 		}
@@ -1005,10 +1007,10 @@ func generatePodMonitor(
 
 	for _, l := range cfg.Spec.PodTargetLabels {
 		relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
-			SourceLabels: []string{"__meta_kubernetes_pod_label_" + sanitizeLabelName(l)},
-			TargetLabel:  sanitizeLabelName(l),
+			SourceLabels: []string{"__meta_kubernetes_pod_label_" + SanitizeLabelName(l)},
+			TargetLabel:  SanitizeLabelName(l),
 			Regex:        "(.+)",
-			Replacement:  "${1}",
+			Replacement:  "$1",
 		}))
 	}
 
@@ -1024,10 +1026,10 @@ func generatePodMonitor(
 	}))
 	if cfg.Spec.JobLabel != "" {
 		relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
-			SourceLabels: []string{"__meta_kubernetes_pod_label_" + sanitizeLabelName(cfg.Spec.JobLabel)},
+			SourceLabels: []string{"__meta_kubernetes_pod_label_" + SanitizeLabelName(cfg.Spec.JobLabel)},
 			TargetLabel:  "job",
 			Regex:        "(.+)",
-			Replacement:  "${1}",
+			Replacement:  "$1",
 		}))
 	}
 
@@ -1182,7 +1184,7 @@ func generateProbe(
 		for _, k := range labelKeys {
 			relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 				Action:       "keep",
-				SourceLabels: []string{"__meta_kubernetes_ingress_label_" + sanitizeLabelName(k)},
+				SourceLabels: []string{"__meta_kubernetes_ingress_label_" + SanitizeLabelName(k)},
 				Regex:        cfg.Spec.Targets.Ingress.Selector.MatchLabels[k],
 			}))
 		}
@@ -1194,25 +1196,25 @@ func generateProbe(
 			case metav1.LabelSelectorOpIn:
 				relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 					Action:       "keep",
-					SourceLabels: []string{"__meta_kubernetes_ingress_label_" + sanitizeLabelName(exp.Key)},
+					SourceLabels: []string{"__meta_kubernetes_ingress_label_" + SanitizeLabelName(exp.Key)},
 					Regex:        strings.Join(exp.Values, "|"),
 				}))
 			case metav1.LabelSelectorOpNotIn:
 				relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 					Action:       "drop",
-					SourceLabels: []string{"__meta_kubernetes_ingress_label_" + sanitizeLabelName(exp.Key)},
+					SourceLabels: []string{"__meta_kubernetes_ingress_label_" + SanitizeLabelName(exp.Key)},
 					Regex:        strings.Join(exp.Values, "|"),
 				}))
 			case metav1.LabelSelectorOpExists:
 				relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 					Action:       "keep",
-					SourceLabels: []string{"__meta_kubernetes_ingress_labelpresent_" + sanitizeLabelName(exp.Key)},
+					SourceLabels: []string{"__meta_kubernetes_ingress_labelpresent_" + SanitizeLabelName(exp.Key)},
 					Regex:        "true",
 				}))
 			case metav1.LabelSelectorOpDoesNotExist:
 				relabels = append(relabels, generateRelabelConfig(&prom.RelabelConfig{
 					Action:       "drop",
-					SourceLabels: []string{"__meta_kubernetes_ingress_labelpresent_" + sanitizeLabelName(exp.Key)},
+					SourceLabels: []string{"__meta_kubernetes_ingress_labelpresent_" + SanitizeLabelName(exp.Key)},
 					Regex:        "true",
 				}))
 			}
@@ -1232,7 +1234,7 @@ func generateProbe(
 				Separator:    ";",
 				Regex:        "(.+);(.+);(.+)",
 				TargetLabel:  "__param_target",
-				Replacement:  "${1}://${2}${3}",
+				Replacement:  "$1://$2$3",
 				Action:       "replace",
 			}),
 			generateRelabelConfig(&prom.RelabelConfig{
