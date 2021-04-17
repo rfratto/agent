@@ -17,8 +17,11 @@ func Test_buildPrometheusGlobal(t *testing.T) {
 	// Shared objects across all tests
 	var (
 		namespace = "default"
-		store     assets.SecretStore
+		store     = make(assets.SecretStore)
 	)
+
+	store[assets.Key("/secrets/default/example-secret/key")] = "somesecret"
+	store[assets.Key("/configMaps/default/example-cm/key")] = "somecm"
 
 	tt := []struct {
 		input  string
@@ -32,7 +35,7 @@ func Test_buildPrometheusGlobal(t *testing.T) {
 					cluster: prod
 				remoteWrite:
 				- name: rw-1
-					url: http://localhost:9090/api/prom/push
+					url: http://localhost:9090/api/v1/write
 			`),
 			expect: util.Untab(`
 				scrape_interval: 15s
@@ -41,12 +44,43 @@ func Test_buildPrometheusGlobal(t *testing.T) {
 					cluster: prod
 				remote_write:
 				- name: rw-1
-					url: http://localhost:9090/api/prom/push
+					url: http://localhost:9090/api/v1/write
 			`),
 		},
 
-		// TODO(rfratto): more tests. ensure that secrets are loaded for
-		// remote_write for all fields that don't support files.
+		{
+			input: util.Untab(`
+				remoteWrite:
+				- url: http://localhost:9090/api/v1/write
+					basicAuth:
+						username:
+							name: example-secret
+							key: key
+						password:
+							name: example-secret
+							key: key
+					tlsConfig:
+						ca:
+							configMap:
+								name:	example-cm
+								key: key
+						cert:
+							secret:
+								name: example-secret
+								key: key
+			`),
+			expect: util.Untab(`
+				remote_write:
+				- url: http://localhost:9090/api/v1/write
+					basic_auth:
+						username: somesecret
+						password: somesecret
+					tls_config:
+						ca_file: /var/lib/grafana-agent/secrets/_configMaps_default_example_cm_key
+						cert_file: /var/lib/grafana-agent/secrets/_secrets_default_example_secret_key
+						insecure_skip_verify: false
+			`),
+		},
 	}
 
 	for i, tc := range tt {

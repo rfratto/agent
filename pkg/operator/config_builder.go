@@ -107,8 +107,10 @@ func (d *Deployment) BuildConfig(secrets assets.SecretStore) (ms util.Map, err e
 }
 
 func buildPrometheusGlobal(ns string, cfg *grafana.PrometheusSubsystemSpec, secrets assets.SecretStore) (ms util.Map, err error) {
-	ms.Set("external_labels", cfg.ExternalLabels)
 
+	if len(cfg.ExternalLabels) > 0 {
+		ms.Set("external_labels", cfg.ExternalLabels)
+	}
 	if cfg.ScrapeInterval != "" {
 		ms.Set("scrape_interval", cfg.ScrapeInterval)
 	}
