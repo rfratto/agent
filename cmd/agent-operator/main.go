@@ -16,7 +16,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	"sigs.k8s.io/controller-runtime/pkg/source"
 
-	"github.com/grafana/agent/pkg/operator"
 	grafana_v1alpha1 "github.com/grafana/agent/pkg/operator/apis/monitoring/v1alpha1"
 	promop_v1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	apps_v1 "k8s.io/api/apps/v1"
@@ -72,13 +71,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	var (
-		eventPromInstances  = &operator.EnqueueRequestForSelector{Client: m.GetClient(), Log: logger}
-		eventServiceMonitor = &operator.EnqueueRequestForSelector{Client: m.GetClient(), Log: logger}
-		eventPodMonitor     = &operator.EnqueueRequestForSelector{Client: m.GetClient(), Log: logger}
-		eventProbe          = &operator.EnqueueRequestForSelector{Client: m.GetClient(), Log: logger}
-		eventSecret         = &operator.EnqueueRequestForSelector{Client: m.GetClient(), Log: logger}
-	)
+	events := newResourceEventHandlers(m.GetClient(), logger)
 
 	applyGVK := func(obj client.Object) client.Object { return applyGVK(obj, m) }
 	watchType := func(obj client.Object) source.Source { return watchType(obj, m) }
@@ -88,20 +81,15 @@ func main() {
 		Owns(applyGVK(&core_v1.Service{})).
 		Owns(applyGVK(&core_v1.Secret{})).
 		Owns(applyGVK(&apps_v1.StatefulSet{})).
-		Watches(watchType(&grafana_v1alpha1.PrometheusInstance{}), eventPromInstances).
-		Watches(watchType(&promop_v1.ServiceMonitor{}), eventServiceMonitor).
-		Watches(watchType(&promop_v1.PodMonitor{}), eventPodMonitor).
-		Watches(watchType(&promop_v1.Probe{}), eventProbe).
-		Watches(watchType(&core_v1.Secret{}), eventSecret).
+		Watches(watchType(&grafana_v1alpha1.PrometheusInstance{}), events[resourcePromInstance]).
+		Watches(watchType(&promop_v1.ServiceMonitor{}), events[resourceServiceMonitor]).
+		Watches(watchType(&promop_v1.PodMonitor{}), events[resourcePodMonitor]).
+		Watches(watchType(&promop_v1.Probe{}), events[resourceProbe]).
+		Watches(watchType(&core_v1.Secret{}), events[resourceSecret]).
 		Complete(&reconciler{
-			Client: m.GetClient(),
-			scheme: m.GetScheme(),
-
-			eventPromInstances:  eventPromInstances,
-			eventServiceMonitor: eventServiceMonitor,
-			eventPodMonitor:     eventPodMonitor,
-			eventProbe:          eventProbe,
-			eventSecret:         eventSecret,
+			Client:        m.GetClient(),
+			scheme:        m.GetScheme(),
+			eventHandlers: events,
 		})
 	if err != nil {
 		level.Error(logger).Log("msg", "unable to create controller", "err", err)

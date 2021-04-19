@@ -26,13 +26,7 @@ type reconciler struct {
 	client.Client
 	scheme *runtime.Scheme
 
-	// Various event handlers that can trigger reconciliation for watched
-	// resources.
-	eventPromInstances  *operator.EnqueueRequestForSelector
-	eventServiceMonitor *operator.EnqueueRequestForSelector
-	eventPodMonitor     *operator.EnqueueRequestForSelector
-	eventProbe          *operator.EnqueueRequestForSelector
-	eventSecret         *operator.EnqueueRequestForSelector
+	eventHandlers eventHandlers
 }
 
 func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (controller.Result, error) {
@@ -42,12 +36,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (con
 	var agent grafana_v1alpha1.GrafanaAgent
 	if err := r.Get(ctx, req.NamespacedName, &agent); errors.IsNotFound(err) {
 		level.Debug(l).Log("msg", "detected deleted agent, cleaning up watchers")
-
-		r.eventPromInstances.Notify(req.NamespacedName, nil)
-		r.eventServiceMonitor.Notify(req.NamespacedName, nil)
-		r.eventPodMonitor.Notify(req.NamespacedName, nil)
-		r.eventProbe.Notify(req.NamespacedName, nil)
-		r.eventSecret.Notify(req.NamespacedName, nil)
+		r.eventHandlers.Clear(req.NamespacedName)
 
 		return controller.Result{}, nil
 	} else if err != nil {
@@ -60,7 +49,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (con
 		Client:            r.Client,
 		Agent:             &agent,
 		Secrets:           secrets,
-		ResourceSelectors: make(map[string][]operator.ResourceSelector),
+		ResourceSelectors: make(map[secondaryResource][]operator.ResourceSelector),
 	}
 
 	deployment, err := builder.Build(l, ctx)
@@ -178,22 +167,12 @@ func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (con
 	// Update our notifiers with every object we discovered. This ensures that we
 	// will re-reconcile whenever any of these objects (which composed our configs)
 	// changes.
-	r.eventPromInstances.Notify(req.NamespacedName, builder.ResourceSelectors[promResourceKey])
-	r.eventServiceMonitor.Notify(req.NamespacedName, builder.ResourceSelectors[smResourceKey])
-	r.eventPodMonitor.Notify(req.NamespacedName, builder.ResourceSelectors[pmResourceKey])
-	r.eventProbe.Notify(req.NamespacedName, builder.ResourceSelectors[probeResourceKey])
-	r.eventSecret.Notify(req.NamespacedName, builder.ResourceSelectors[secretResoruceKey])
+	for _, secondary := range secondaryResources {
+		r.eventHandlers[secondary].Notify(req.NamespacedName, builder.ResourceSelectors[secondary])
+	}
 
 	return controller.Result{}, nil
 }
-
-const (
-	promResourceKey   = "prom"
-	smResourceKey     = "sm"
-	pmResourceKey     = "pm"
-	probeResourceKey  = "probe"
-	secretResoruceKey = "secret"
-)
 
 type deploymentBuilder struct {
 	client.Client
@@ -203,7 +182,7 @@ type deploymentBuilder struct {
 
 	// ResourceSelectors is filled as objects are found and can be used to
 	// trigger future reconciles.
-	ResourceSelectors map[string][]operator.ResourceSelector
+	ResourceSelectors map[secondaryResource][]operator.ResourceSelector
 }
 
 func (b *deploymentBuilder) Build(l log.Logger, ctx context.Context) (operator.Deployment, error) {
@@ -253,7 +232,7 @@ func (b *deploymentBuilder) getPrometheusInstances(ctx context.Context) ([]*graf
 	if err != nil {
 		return nil, fmt.Errorf("unable to build prometheus resource selector: %w", err)
 	}
-	b.ResourceSelectors[promResourceKey] = append(b.ResourceSelectors[promResourceKey], sel)
+	b.ResourceSelectors[resourcePromInstance] = append(b.ResourceSelectors[resourcePromInstance], sel)
 
 	var (
 		list        grafana_v1alpha1.PrometheusInstanceList
@@ -360,7 +339,7 @@ func (b *deploymentBuilder) getServiceMonitors(
 	if err != nil {
 		return nil, fmt.Errorf("unable to build service monitor resource selector: %w", err)
 	}
-	b.ResourceSelectors[smResourceKey] = append(b.ResourceSelectors[smResourceKey], sel)
+	b.ResourceSelectors[resourceServiceMonitor] = append(b.ResourceSelectors[resourceServiceMonitor], sel)
 
 	var (
 		list        prom.ServiceMonitorList
@@ -394,7 +373,7 @@ func (b *deploymentBuilder) getPodMonitors(
 	if err != nil {
 		return nil, fmt.Errorf("unable to build service monitor resource selector: %w", err)
 	}
-	b.ResourceSelectors[pmResourceKey] = append(b.ResourceSelectors[pmResourceKey], sel)
+	b.ResourceSelectors[resourcePodMonitor] = append(b.ResourceSelectors[resourcePodMonitor], sel)
 
 	var (
 		list        prom.PodMonitorList
@@ -428,7 +407,7 @@ func (b *deploymentBuilder) getProbes(
 	if err != nil {
 		return nil, fmt.Errorf("unable to build service monitor resource selector: %w", err)
 	}
-	b.ResourceSelectors[probeResourceKey] = append(b.ResourceSelectors[probeResourceKey], sel)
+	b.ResourceSelectors[resourceProbe] = append(b.ResourceSelectors[resourceProbe], sel)
 
 	var namespace string
 	if !sel.NamespaceName.Any && len(sel.NamespaceName.MatchNames) == 1 {

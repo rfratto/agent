@@ -188,6 +188,3 @@ pushd ./vendor/github.com/prometheus-operator/prometheus-operator/pkg/apis/monit
 controller-gen crd:crdVersions=v1 paths=. output:crd:dir=../../../../../../../../production/operator/crds
 popd
 ```
-
-
-
