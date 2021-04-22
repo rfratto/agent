@@ -1,0 +1,44 @@
+{{- /*
+  This is the root file that will be generated for the Agent file.
+  There are some patterns to be aware of here:
+
+  Use the yamlField function to generate a field from a value that
+  is non-zero. The value will be marshaled to YAML. If the value is
+  an array or a struct, you will need to pipe it in to nindent and
+  provide the appropriate indentation.
+
+  Use the secretValue function to retrieve the value for a cached secret.
+  The first argument should be the namespace to perform the lookup in
+  and the second argument should be the selector. If the selector is nil,
+  secretValue will return an empty string. This allows secretValue to be
+  an arugment to yamlField where no field will be added if the secret isn't
+  defined.
+
+  If you want custom YAML, create a new template and then use the
+  include function to render it.
+
+  Templates should declare what object they expect to be set to the
+  dot.
+
+  To insert YAML blocks, use the following pattern:
+
+    {{- expr | nindent indentation_level }}
+
+*/ -}}
+
+server:
+  http_listen_port: 8080
+  {{ yamlField "log_level" .Agent.Spec.LogLevel }}
+  {{ yamlField "log_format" .Agent.Spec.LogFormat }}
+
+prometheus:
+  wal_directory: /var/lib/grafana-agent/data
+  global:
+    {{- include "component/prometheus-global.yaml" . | nindent 4 }}
+  {{ if .Prometheis }}
+  configs:
+    {{ range $instance := .Prometheis }}
+      {{ $ctx := dict "Agent" .Agent "Spec" $instance }}
+    - {{- include "prometheus.yaml" $ctx | nindent 6 }}
+    {{ end }}
+  {{ end }}

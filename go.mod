@@ -1,9 +1,10 @@
 module github.com/grafana/agent
 
-go 1.15
+go 1.16
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.2.0
+	github.com/Masterminds/sprig/v3 v3.2.2
 	github.com/cortexproject/cortex v1.7.1-0.20210224085859-66d6fb5b0d42
 	github.com/drone/envsubst v1.0.2
 	github.com/go-kit/kit v0.10.0

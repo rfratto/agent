@@ -1,0 +1,14 @@
+{{- /*
+  tls_config.yaml generates the contents of a tls_config block.
+  Pipeline value should be a map where:
+
+    .Namespace: Namespace of the parent object
+    .Spec:      TLSConfig to render
+*/ -}}
+
+{{ $safe_tls := dict "Namespace" .Namespace "Spec" .Spec.SafeTLSConfig }}
+{{ include "component/safe_tls_config.yaml" $safe_tls }}
+
+{{ yamlField "ca_file" .Spec.CAFile }}
+{{ yamlField "cert_file" .Spec.CertFile }}
+{{ yamlField "key_file" .Spec.KeyFile }}

@@ -1,0 +1,114 @@
+{{- /*
+
+  .AgentNamespace
+  .Spec
+  .Endpoint
+  .Index
+  .APIServerConfig
+  .OverrideHonorLabels
+  .OverrideHonorTimestamps
+  .IgnoreNamespaceSelectors
+  .EnforcedNamepsaceLabel
+  .EnforcedSampleLimit
+  .EnforcedTargetLimit
+
+*/ -}}
+
+job_name: serviceMonitor/{{ .Spec.Namespace }}/{{ .Spec.Name }}/{{ .Index }}
+honor_labels: {{ honorLabels .Endpoint.HonorLabels .OverrideHonorLabels }}
+{{ yamlField "honor_timestamps" (honorTimestamps .Endpoint.HonorTimestamps .OverrideHonorTimestamps)}}
+
+{{
+  $kube_sd_config_ctx := dict
+    "Namespace"  .AgentNamespace
+    "Namespaces" (
+        namespacesFromSelector .Spec.Spec.NamespaceSelector .Spec.Namespace .IgnoreNamespaceSelectors
+    )
+    "APIServerConfig" .APIServerConfig
+    "Role"            "endpoints"
+}}
+{{ include "component/kube_sd_config.yaml" $kube_sd_config_ctx }}
+
+{{ yamlField "scrape_interval" .Endpoint.Interval }}
+{{ yamlField "scrape_timeout" .Endpoint.ScrapeTimeout }}
+{{ yamlField "metrics_path" .Endpoint.Path }}
+{{ yamlField "proxy_url" .Endpoint.ProxyURL }}
+{{ yamlField "params" .Endpoint.Params }}
+{{ yamlField "scheme" .Endpoint.Scheme }}
+{{ yamlField "bearer_token_file" .Endpoint.BearerTokenFile }}
+{{ yamlField "bearer_token" (secretValue .Spec.Namespace .Endpoint.BearerTokenSecret) }}
+{{ if .Endpoint.TLSConfig }}
+tls_config:
+  {{ $ctx := dict "Namespace" .Spec.Namespace "Spec" .Endpoint.TLSConfig }}
+  {{- include "component/tls_config.yaml" $ctx | nindent 2 }}
+{{ end }}
+{{ if .Endpoint.BasicAuth }}
+basic_auth:
+  username: {{ secretValue .Spec.Namespace .Endpoint.BasicAuth.Username }}
+  password: {{ secretValue .Spec.Namespace .Endpoint.BasicAuth.Password }}
+{{ end }}
+
+relabel_configs:
+  - source_labels: ["job"]
+    target_label: "__tmp_prometheus_job_name"
+
+  {{ range $key := (labelKeys .Spec.Spec.Selector.MatchLabels) }}
+  - source_labels: ["__meta_kubernetes_service_label_{{ sanitizeLabel $key }}"]
+    regex: {{ index .Spec.Spec.Selector.MatchLabels $key }}
+    action: "keep"
+  {{ end }}
+
+  # Set based label matching. We have to map the valid relations `In`, `NotIn`,
+  # `Exists`, and `DoesNotExist` into relabeling rules.
+  {{ range $exp := .Spec.Spec.Selector.MatchExpressions }}
+    {{ if eq $exp "In" }}
+  - source_labels: ["__meta_kubernetes_service_label_{{ sanitizeLabel $exp.Key }}"]
+    regex: {{ $exp.Values | join "|" | yaml }}
+    action: "keep"
+    {{ else if eq $exp "NotIn" }}
+  - source_labels: ["__meta_kubernetes_service_label_{{ sanitizeLabel $exp.Key }}"]
+    regex: {{ $exp.Values | join "|" | yaml }}
+    action: "drop"
+    {{ else if eq $exp "Exists" }}
+  - source_labels: ["__meta_kubernetes_service_labelpresent_{{ sanitizeLabel $exp.Key }}"]
+    regex: "true"
+    action: "keep"
+    {{ else if eq $exp "DoesNotExist" }}
+  - source_labels: ["__meta_kubernetes_service_labelpresent_{{ sanitizeLabel $exp.Key }}"]
+    regex: "true"
+    action: "drop"
+    {{ end }}
+  {{ end }}
+
+  # Filter targets based on correct port for the endpoint.
+  {{ if .Endpoint.Port }}
+  - source_labels: ["__meta_kubernetes_endpoint_port_name"]
+    regex: {{ yaml .Endpoint.Port }}
+    action: "keep"
+  {{ else if .Endpoint.TargetPort }}
+    {{ if .Endpoint.TargetPort.StrVal }}
+  - source_labels: ["__meta_kubernetes_pod_container_name"]
+    regex: {{ .Endpoint.TargetPort.String | yaml }}
+    action: "keep"
+    {{ else if .Endpoint.TargetPort.IntVal }}
+  - source_labels: ["__meta_kubernetes_pod_container_number"]
+    regex: {{ .Endpoint.TargetPort.String | yaml }}
+    action: "keep"
+    {{ end }}
+  {{ end }}
+
+  # Relabel namespace, pod, and service labels into proper labels.
+  - source_labels:
+    - __meta_kubernetes_endpoint_address_target_kind
+    - __meta_kubernetes_endpoint_address_target_name
+    target_label: "node"
+    separator: ";"
+    regex: "Node;(.*)"
+    replacement: "$1"
+  - source_labels:
+    - __meta_kubernetes_endpoint_address_target_kind
+    - __meta_kubernetes_endpoint_address_target_name
+    target_label: "pod"
+    separator: ";"
+    regex: "Pod;(.*)"
+    replacement: "$1"

@@ -1,0 +1,14 @@
+{{ $root := . }}
+{{ $cfg := .Agent.Spec.Prometheus }}
+
+{{ yamlField "external_labels" $cfg.ExternalLabels }}
+{{ yamlField "scrape_interval" $cfg.ScrapeInterval }}
+{{ yamlField "scrape_timeout" $cfg.ScrapeTimeout }}
+
+{{ if $cfg.RemoteWrite }}
+remote_write:
+  {{ range $rw := $cfg.RemoteWrite }}
+  {{ $ctx := dict "Namespace" $root.Agent.Namespace "Spec" $rw }}
+  - {{- include "component/remote_write.yaml" $ctx | nindent 4 }}
+  {{ end }}
+{{ end }}

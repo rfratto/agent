@@ -1,0 +1,28 @@
+{{- /*
+  kubernetes_sd_config.yaml generates kubernetes_sd_configs.
+  Pipeline value should be a map where:
+
+    .Namespace:       Namespace of the parent object.
+    .Namespaces:      Namespaces to discover in.
+    .APIServerConfig: APIServerConfig to connecting to Kubernetes.
+    .Role:            Role of objects to discovery.
+*/ -}}
+
+kubernetes_sd_configs:
+  - role: {{ .Role }}
+    {{- yamlField "namespaces" .Namespaces | nindent 4 }}
+    {{ if .APIServerConfig }}
+    api_server: {{ .APIServerConfig.Host }}
+    {{ yamlField "bearer_token" .APIServerConfig.BearerToken }}
+    {{ yamlField "bearer_token_file" .APIServerConfig.BearerTokenFile }}
+    {{ if .APIServerConfig.BasicAuth }}
+    basic_auth:
+      username: {{ secretValue .Namespace .APIServerConfig.BasicAuth.Username }}
+      password: {{ secretValue .Namespace .APIServerConfig.BasicAuth.Password }}
+    {{ end }}
+    {{ if .APIServerConfig.TLSConfig }}
+    tls_config:
+      {{ $ctx := dict "Namespace" .Namespace "Spec" .APIServerConfig.TLSConfig }}
+      {{- include "component/tls_config.yaml" $ctx | nindent 6 }}
+    {{ end }}
+    {{ end }}
