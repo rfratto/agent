@@ -4,9 +4,14 @@ local secrets = import '../ext/secrets.libsonnet';
 local new_relabel_config = import './relabel_config.libsonnet';
 local new_tls_config = import './tls_config.libsonnet';
 
-// TODO(rfratto): follow_redirects
-// TODO(rfratto): retry_on_http_429, currently experimental
+// Generates the contents of a remote_write object.
+//
+// namespace should be the namespace that the remote_write was discovered in.
+// rw should be RemoteWriteSpec.
 function(namespace, rw) {
+  // TODO(rfratto): follow_redirects
+  // TODO(rfratto): retry_on_http_429, currently experimental
+
   url: rw.URL,
   name: optionals.string(rw.Name),
   remote_timeout: optionals.string(rw.RemoteTimeout),
