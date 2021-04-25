@@ -4,19 +4,21 @@ go 1.16
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.2.0
-	github.com/Masterminds/sprig/v3 v3.2.2
 	github.com/cortexproject/cortex v1.7.1-0.20210224085859-66d6fb5b0d42
 	github.com/drone/envsubst v1.0.2
+	github.com/fatih/structs v0.0.0-20180123065059-ebf56d35bba7
 	github.com/go-kit/kit v0.10.0
 	github.com/go-logr/logr v0.4.0
 	github.com/gogo/protobuf v1.3.2
 	github.com/golang/protobuf v1.5.0
 	github.com/google/dnsmasq_exporter v0.0.0-00010101000000-000000000000
+	github.com/google/go-jsonnet v0.17.0
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/loki v1.6.2-0.20210205130758-59a34f9867ce
 	github.com/hashicorp/consul/api v1.8.1
 	github.com/hashicorp/go-getter v1.5.3
 	github.com/hashicorp/go-version v1.3.0 // indirect
+	github.com/imdario/mergo v0.3.11 // indirect
 	github.com/jsternberg/zap-logfmt v1.2.0
 	github.com/justwatchcom/elasticsearch_exporter v1.1.0
 	github.com/miekg/dns v1.1.41

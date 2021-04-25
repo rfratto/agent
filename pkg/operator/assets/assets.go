@@ -34,12 +34,18 @@ type SecretStore map[Key]string
 // KeyForSecret returns the key for a given namespace and a secret key
 // selector.
 func KeyForSecret(namespace string, sel *v1.SecretKeySelector) Key {
+	if sel == nil {
+		return Key("")
+	}
 	return Key(fmt.Sprintf("/secrets/%s/%s/%s", namespace, sel.Name, sel.Key))
 }
 
 // KeyForConfigMap returns the key for a given namespace and a config map
 // key selector.
 func KeyForConfigMap(namespace string, sel *v1.ConfigMapKeySelector) Key {
+	if sel == nil {
+		return Key("")
+	}
 	return Key(fmt.Sprintf("/configMaps/%s/%s/%s", namespace, sel.Name, sel.Key))
 }
 

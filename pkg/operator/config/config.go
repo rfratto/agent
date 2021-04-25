@@ -3,19 +3,18 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"path/filepath"
-	"regexp"
-	"strings"
-	"text/template"
 
-	"github.com/Masterminds/sprig/v3"
+	"github.com/fatih/structs"
+	jsonnet "github.com/google/go-jsonnet"
+	"github.com/google/go-jsonnet/ast"
 	grafana "github.com/grafana/agent/pkg/operator/apis/monitoring/v1alpha1"
 	"github.com/grafana/agent/pkg/operator/assets"
 	prom "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"gopkg.in/yaml.v2"
-	v1 "k8s.io/api/core/v1"
 )
 
 // Deployment is a set of resources used for one deployment of the Agent.
@@ -24,150 +23,85 @@ type Deployment struct {
 	Agent *grafana.GrafanaAgent
 	// Prometheis is the set of prometheus instances discovered from the root Agent resource.
 	Prometheis []PrometheusInstance
-	// Secrets are used for secret lookup for any configuration fields that
-	// cannot be loaded directly from a file. If a secret is used, lookup must
-	// succeed otherwise building will fail.
-	Secrets assets.SecretStore
 }
 
 // BuildConfig builds an Agent configuration file.
-func (d *Deployment) BuildConfig() (string, error) {
-	tmpls := template.New("")
-	tmpls.Option("missingkey=invalid")
+func (d *Deployment) BuildConfig(secrets assets.SecretStore) (string, error) {
+	vm := jsonnet.MakeVM()
+	vm.StringOutput = true
 
-	tmpls.Funcs(sprig.TxtFuncMap())
-	tmpls.Funcs(template.FuncMap{
-		"include": func(template string, v interface{}) (string, error) {
-			tmpl := tmpls.Lookup(template)
-			if tmpl == nil {
-				return "", fmt.Errorf("no such template %s", template)
-			}
+	templatesContents, err := fs.Sub(templates, "templates")
+	if err != nil {
+		return "", err
+	}
 
-			var sw strings.Builder
-			if err := tmpl.Execute(&sw, v); err != nil {
-				return "", err
-			}
-			return sw.String(), nil
-		},
+	vm.Importer(NewFSImporter(templatesContents))
 
-		"yaml": func(v interface{}) (string, error) {
-			bb, err := yaml.Marshal(v)
+	vm.NativeFunction(&jsonnet.NativeFunction{
+		Name:   "marshalYAML",
+		Params: ast.Identifiers{"object"},
+		Func: func(i []interface{}) (interface{}, error) {
+			bb, err := yaml.Marshal(i[0])
 			if err != nil {
-				return "", err
+				return nil, jsonnet.RuntimeError{Msg: err.Error()}
 			}
 			return string(bb), nil
 		},
-		"yamlField": yamlField,
+	})
 
-		"namespacesFromSelector": func(sel *prom.NamespaceSelector, ns string, ignoreSelectors bool) []string {
-			switch {
-			case ignoreSelectors:
-				return []string{ns}
-			case sel.Any:
-				return []string{}
-			case len(sel.MatchNames) == 0:
-				// If no names are manually provided, the default is to look in the current
-				// namespace.
-				return []string{ns}
-			default:
-				return sel.MatchNames
-			}
+	vm.NativeFunction(&jsonnet.NativeFunction{
+		Name:   "trimOptional",
+		Params: ast.Identifiers{"value"},
+		Func: func(i []interface{}) (interface{}, error) {
+			m := i[0].(map[string]interface{})
+			trimMap(m)
+			return m, nil
 		},
-		"honorLabels": func(honor, override bool) bool {
-			if honor && override {
-				return false
-			}
-			return honor
-		},
-		"honorTimestamps": func(honor *bool, override bool) *bool {
-			if honor == nil && !override {
-				return nil
+	})
+	vm.NativeFunction(&jsonnet.NativeFunction{
+		Name:   "secretLookup",
+		Params: ast.Identifiers{"key"},
+		Func: func(i []interface{}) (interface{}, error) {
+			if i[0] == nil {
+				return nil, nil
 			}
 
-			var val bool
-			if honor != nil {
-				val = *honor
-			}
-
-			val = val && !override
-			return &val
-		},
-
-		"secretPath": func(ns string, sel interface{}) (string, error) {
-			if sel == nil {
-				return "", nil
-			}
-
-			switch v := sel.(type) {
-			case prom.SecretOrConfigMap:
-				if v.ConfigMap == nil && v.Secret == nil {
-					return "", nil
-				}
-				return pathForKey(assets.KeyForSelector(ns, &v)), nil
-			case *v1.SecretKeySelector:
-				if v == nil {
-					return "", nil
-				}
-				return pathForKey(assets.KeyForSecret(ns, v)), nil
-			case *v1.ConfigMapKeySelector:
-				if v == nil {
-					return "", nil
-				}
-				return pathForKey(assets.KeyForConfigMap(ns, v)), nil
-			default:
-				return "", fmt.Errorf("unknown secretPath type %T", v)
-			}
-		},
-		"secretValue": func(ns string, sel *v1.SecretKeySelector) (string, error) {
-			if sel == nil {
-				return "", nil
-			}
-
-			path := assets.KeyForSecret(ns, sel)
-			val, ok := d.Secrets[path]
+			k := assets.Key(i[0].(string))
+			val, ok := secrets[k]
 			if !ok {
-				return "", fmt.Errorf("no secret: %s", path)
+				return nil, jsonnet.RuntimeError{Msg: fmt.Sprintf("key not provided: %s", k)}
 			}
 			return val, nil
 		},
 	})
+	vm.NativeFunction(&jsonnet.NativeFunction{
+		Name:   "secretPath",
+		Params: ast.Identifiers{"key"},
+		Func: func(i []interface{}) (interface{}, error) {
+			if i[0] == nil {
+				return nil, nil
+			}
 
-	err := fs.WalkDir(templates, "templates", func(path string, d fs.DirEntry, err error) error {
-		if d.IsDir() || !strings.HasSuffix(path, ".yaml") {
-			return nil
-		}
-
-		bb, err := fs.ReadFile(templates, path)
-		if err != nil {
-			return err
-		}
-
-		relative := strings.TrimPrefix(path, "templates/")
-		_, err = tmpls.New(relative).Parse(string(bb))
-		if err != nil {
-			return err
-		}
-		return nil
+			key := SanitizeLabelName(i[0].(string))
+			return filepath.Join("/var/lib/grafana-agent/secrets", key), nil
+		},
 	})
+	vm.NativeFunction(&jsonnet.NativeFunction{
+		Name: "context",
+		Func: func(i []interface{}) (interface{}, error) {
+			return d, nil
+		},
+	})
+
+	// Hack: we want to allow the Jsonnet code to reference the deployment's
+	// fields using the Go names and NOT the JSON names.
+	bb, err := json.Marshal(structs.Map(d))
 	if err != nil {
-		return "", fmt.Errorf("error reading templates: %w", err)
-	}
-
-	var sw strings.Builder
-	if err := tmpls.Lookup("agent.yaml").Execute(&sw, d); err != nil {
-		return "", fmt.Errorf("failed to execute template: %w", err)
-	}
-
-	return reformatYAML(sw.String())
-}
-
-func reformatYAML(in string) (string, error) {
-	var raw yaml.MapSlice
-	if err := yaml.Unmarshal([]byte(in), &raw); err != nil {
 		return "", err
 	}
-	bb, err := yaml.Marshal(raw)
-	return string(bb), err
+
+	vm.TLACode("ctx", string(bb))
+	return vm.EvaluateFile("./agent.libsonnet")
 }
 
 // PrometheusInstance is an instance with a set of associated service monitors,
@@ -178,19 +112,4 @@ type PrometheusInstance struct {
 	ServiceMonitors []*prom.ServiceMonitor
 	PodMonitors     []*prom.PodMonitor
 	Probes          []*prom.Probe
-
-	// AdditionalScrapeConfigs are user-configured scrape configs to manually
-	// add into the file.
-	AdditionalScrapeConfigs []yaml.MapSlice
-}
-
-func pathForKey(key assets.Key) string {
-	return filepath.Join("/var/lib/grafana-agent/secrets", SanitizeLabelName(string(key)))
-}
-
-var invalidLabelCharRE = regexp.MustCompile(`[^a-zA-Z0-9_]`)
-
-// SanitizeLabelName sanitizes a label name for Prometheus.
-func SanitizeLabelName(name string) string {
-	return invalidLabelCharRE.ReplaceAllString(name, "_")
 }
