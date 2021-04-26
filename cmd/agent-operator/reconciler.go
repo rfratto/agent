@@ -2,18 +2,21 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"os"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/google/go-jsonnet"
 	"github.com/grafana/agent/cmd/agent-operator/internal/logutil"
 	"github.com/grafana/agent/pkg/operator"
 	grafana_v1alpha1 "github.com/grafana/agent/pkg/operator/apis/monitoring/v1alpha1"
 	"github.com/grafana/agent/pkg/operator/assets"
+	"github.com/grafana/agent/pkg/operator/config"
 	prom "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"gopkg.in/yaml.v2"
 	core_v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/errors"
+	k8s_errors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -34,7 +37,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (con
 	level.Info(l).Log("msg", "reconciling grafana-agent")
 
 	var agent grafana_v1alpha1.GrafanaAgent
-	if err := r.Get(ctx, req.NamespacedName, &agent); errors.IsNotFound(err) {
+	if err := r.Get(ctx, req.NamespacedName, &agent); k8s_errors.IsNotFound(err) {
 		level.Debug(l).Log("msg", "detected deleted agent, cleaning up watchers")
 		r.eventHandlers.Clear(req.NamespacedName)
 
@@ -61,14 +64,15 @@ func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (con
 	// Create configuration in a secret
 	{
 		rawConfig, err := deployment.BuildConfig(secrets)
+
+		var jsonnetError jsonnet.RuntimeError
+		if errors.As(err, &jsonnetError) {
+			// Jump Jsonnet errors to the console to retain newlines and make them
+			// easier to digest.
+			fmt.Fprintf(os.Stderr, jsonnetError.Error())
+		}
 		if err != nil {
 			level.Error(l).Log("msg", "unable to build config", "err", err)
-			return controller.Result{}, nil
-		}
-
-		configBytes, err := yaml.Marshal(rawConfig)
-		if err != nil {
-			level.Error(l).Log("msg", "unable to marshal config", "err", err)
 			return controller.Result{}, nil
 		}
 
@@ -86,15 +90,15 @@ func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (con
 					UID:                agent.UID,
 				}},
 			},
-			Data: map[string][]byte{"agent.yml": configBytes},
+			Data: map[string][]byte{"agent.yml": []byte(rawConfig)},
 		}
 
 		level.Info(l).Log("msg", "creating or updating secret", "secret", secret.Name)
 		err = r.Client.Update(ctx, &secret)
-		if errors.IsNotFound(err) {
+		if k8s_errors.IsNotFound(err) {
 			err = r.Client.Create(ctx, &secret)
 		}
-		if errors.IsAlreadyExists(err) {
+		if k8s_errors.IsAlreadyExists(err) {
 			return controller.Result{Requeue: true}, nil
 		}
 		if err != nil {
@@ -110,7 +114,7 @@ func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (con
 
 		data := make(map[string][]byte)
 		for k, value := range secrets {
-			data[operator.SanitizeLabelName(string(k))] = []byte(value)
+			data[config.SanitizeLabelName(string(k))] = []byte(value)
 		}
 
 		secret := core_v1.Secret{
@@ -130,10 +134,10 @@ func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (con
 
 		level.Info(l).Log("msg", "creating or updating secret", "secret", secret.Name)
 		err = r.Client.Update(ctx, &secret)
-		if errors.IsNotFound(err) {
+		if k8s_errors.IsNotFound(err) {
 			err = r.Client.Create(ctx, &secret)
 		}
-		if errors.IsAlreadyExists(err) {
+		if k8s_errors.IsAlreadyExists(err) {
 			return controller.Result{Requeue: true}, nil
 		}
 		if err != nil {
@@ -152,10 +156,10 @@ func (r *reconciler) Reconcile(ctx context.Context, req controller.Request) (con
 
 		level.Info(l).Log("msg", "creating or updating statefulset", "statefulset", ss.Name)
 		err = r.Client.Update(ctx, ss)
-		if errors.IsNotFound(err) {
+		if k8s_errors.IsNotFound(err) {
 			err = r.Client.Create(ctx, ss)
 		}
-		if errors.IsAlreadyExists(err) {
+		if k8s_errors.IsAlreadyExists(err) {
 			return controller.Result{Requeue: true}, nil
 		}
 		if err != nil {
@@ -185,31 +189,31 @@ type deploymentBuilder struct {
 	ResourceSelectors map[secondaryResource][]operator.ResourceSelector
 }
 
-func (b *deploymentBuilder) Build(l log.Logger, ctx context.Context) (operator.Deployment, error) {
+func (b *deploymentBuilder) Build(l log.Logger, ctx context.Context) (config.Deployment, error) {
 	instances, err := b.getPrometheusInstances(ctx)
 	if err != nil {
-		return operator.Deployment{}, err
+		return config.Deployment{}, err
 	}
-	promInstances := make([]operator.PrometheusInstance, 0, len(instances))
+	promInstances := make([]config.PrometheusInstance, 0, len(instances))
 
 	for _, inst := range instances {
 		sMons, err := b.getServiceMonitors(ctx, inst)
 		if err != nil {
-			return operator.Deployment{}, fmt.Errorf("unable to fetch ServiceMonitors: %w", err)
+			return config.Deployment{}, fmt.Errorf("unable to fetch ServiceMonitors: %w", err)
 		}
 		pMons, err := b.getPodMonitors(ctx, inst)
 		if err != nil {
-			return operator.Deployment{}, fmt.Errorf("unable to fetch PodMonitors: %w", err)
+			return config.Deployment{}, fmt.Errorf("unable to fetch PodMonitors: %w", err)
 		}
 		probes, err := b.getProbes(ctx, inst)
 		if err != nil {
-			return operator.Deployment{}, fmt.Errorf("unable to fetch Probes: %w", err)
+			return config.Deployment{}, fmt.Errorf("unable to fetch Probes: %w", err)
 		}
 
 		// TODO(rfratto): load in used secrets from instance into secrets store
 		// TODO(rfratto): load in used secrets from sMons, pMons, probes
 
-		promInstances = append(promInstances, operator.PrometheusInstance{
+		promInstances = append(promInstances, config.PrometheusInstance{
 			Instance:        inst,
 			ServiceMonitors: sMons,
 			PodMonitors:     pMons,
@@ -217,7 +221,7 @@ func (b *deploymentBuilder) Build(l log.Logger, ctx context.Context) (operator.D
 		})
 	}
 
-	return operator.Deployment{
+	return config.Deployment{
 		Agent:      b.Agent,
 		Prometheis: promInstances,
 	}, nil

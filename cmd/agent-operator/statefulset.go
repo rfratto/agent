@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/grafana/agent/pkg/build"
-	"github.com/grafana/agent/pkg/operator"
 	"github.com/grafana/agent/pkg/operator/assets"
+	"github.com/grafana/agent/pkg/operator/config"
 	"github.com/pkg/errors"
 	apps_v1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -17,7 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/validation"
 )
 
-func generateStatefulSet(d operator.Deployment, secrets assets.SecretStore) (*apps_v1.StatefulSet, error) {
+func generateStatefulSet(d config.Deployment, secrets assets.SecretStore) (*apps_v1.StatefulSet, error) {
 	// TODO(rfratto): stuff that happens in prometheus-operator:
 	// - default values for port name, replicas, retention, requests
 	// - make stateful set spec
@@ -83,7 +83,7 @@ func generateStatefulSet(d operator.Deployment, secrets assets.SecretStore) (*ap
 	return ss, nil
 }
 
-func generateStatefulSetSpec(d operator.Deployment, secrets assets.SecretStore) (*apps_v1.StatefulSetSpec, error) {
+func generateStatefulSetSpec(d config.Deployment, secrets assets.SecretStore) (*apps_v1.StatefulSetSpec, error) {
 	terminationGracePeriodSeconds := int64(4800)
 
 	var (

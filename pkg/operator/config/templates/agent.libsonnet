@@ -11,10 +11,16 @@
 // When writing a new function, please document the expected types of the
 // arguments.
 
-local new_remote_write = import './component/remote_write.libsonnet';
-
 local marshal = import './ext/marshal.libsonnet';
 local optionals = import './ext/optionals.libsonnet';
+
+local new_remote_write = import './component/remote_write.libsonnet';
+local new_prometheus_instance = import './prometheus.libsonnet';
+
+local calculateShards(requested) =
+  if requested == null then 1
+  else if requested > 1 then requested
+  else 1;
 
 // ctx is expected to be a config.Deployment.
 function(ctx) marshal.YAML(optionals.trim({
@@ -38,5 +44,20 @@ function(ctx) marshal.YAML(optionals.trim({
         prometheus.RemoteWrite,
       )),
     },
+    configs: optionals.array(std.map(
+      function(inst) new_prometheus_instance(
+        agentNamespace=ctx.Agent.ObjectMeta.Namespace,
+        instance=inst,
+        apiServer=spec.APIServerConfig,
+        overrideHonorLabels=prometheus.OverrideHonorLabels,
+        overrideHonorTimestamps=prometheus.OverrideHonorTimestamps,
+        ignoreNamespaceSelectors=prometheus.IgnoreNamespaceSelectors,
+        enforcedNamespaceLabel=prometheus.EnforcedNamepsaceLabel,
+        enforcedSampleLimit=prometheus.EnforcedSampleLimit,
+        enforcedTargetLimit=prometheus.EnforcedTargetLimit,
+        shards=calculateShards(prometheus.Shards),
+      ),
+      ctx.Prometheis,
+    )),
   },
 }))

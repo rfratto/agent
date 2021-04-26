@@ -48,6 +48,11 @@ func (d *Deployment) BuildConfig(secrets assets.SecretStore) (string, error) {
 			return string(bb), nil
 		},
 	})
+	vm.NativeFunction(&jsonnet.NativeFunction{
+		Name:   "unmarshalYAML",
+		Params: ast.Identifiers{"text"},
+		Func:   unmarshalYAML,
+	})
 
 	vm.NativeFunction(&jsonnet.NativeFunction{
 		Name:   "trimOptional",
@@ -86,10 +91,19 @@ func (d *Deployment) BuildConfig(secrets assets.SecretStore) (string, error) {
 			return filepath.Join("/var/lib/grafana-agent/secrets", key), nil
 		},
 	})
+
 	vm.NativeFunction(&jsonnet.NativeFunction{
-		Name: "context",
+		Name:   "sanitize",
+		Params: ast.Identifiers{"text"},
 		Func: func(i []interface{}) (interface{}, error) {
-			return d, nil
+			if len(i) != 1 {
+				return nil, jsonnet.RuntimeError{Msg: "inappropriate number of arguments"}
+			}
+			s, ok := i[0].(string)
+			if !ok {
+				return nil, jsonnet.RuntimeError{Msg: "text must be a string"}
+			}
+			return SanitizeLabelName(s), nil
 		},
 	})
 

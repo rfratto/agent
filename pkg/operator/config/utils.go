@@ -1,6 +1,24 @@
 package config
 
-import "regexp"
+import (
+	"regexp"
+
+	jsonnet "github.com/google/go-jsonnet"
+	"gopkg.in/yaml.v2"
+)
+
+func unmarshalYAML(i []interface{}) (interface{}, error) {
+	text, ok := i[0].(string)
+	if !ok {
+		return nil, jsonnet.RuntimeError{Msg: "unmarshalYAML text argument must be a string"}
+	}
+	var v interface{}
+	err := yaml.Unmarshal([]byte(text), &v)
+	if err != nil {
+		return nil, jsonnet.RuntimeError{Msg: err.Error()}
+	}
+	return v, nil
+}
 
 // trimMap recursively deletes fields from m whose value is nil.
 func trimMap(m map[string]interface{}) {
