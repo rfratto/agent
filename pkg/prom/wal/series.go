@@ -14,27 +14,12 @@ type memSeries struct {
 	lset   labels.Labels
 	lastTs int64
 
-	// TODO(rfratto): this solution below isn't perfect, and there's still
-	// the possibility for a series to be deleted before it's
-	// completely gone from the WAL. Rather, we should have gc return
-	// a "should delete" map and be given a "deleted" map.
-	// If a series that is going to be marked for deletion is in the
-	// "deleted" map, then it should be deleted instead.
-	//
-	// The "deleted" map will be populated by the Truncate function.
-	// It will be cleared with every call to gc.
-
-	// willDelete marks a series as to be deleted on the next garbage
-	// collection. If it receives a write, willDelete is disabled.
-	willDelete bool
-
 	// Whether this series has samples waiting to be committed to the WAL
 	pendingCommit bool
 }
 
 func (s *memSeries) updateTs(ts int64) {
 	s.lastTs = ts
-	s.willDelete = false
 	s.pendingCommit = true
 }
 
@@ -61,6 +46,8 @@ func (m seriesHashmap) set(hash uint64, s *memSeries) {
 	l := m[hash]
 	for i, prev := range l {
 		if labels.Equal(prev.lset, s.lset) {
+			intern.ReleaseLabels(intern.Global, prev.lset)
+
 			l[i] = s
 			return
 		}
@@ -146,16 +133,6 @@ func (s *stripeSeries) gc(mint int64) map[uint64]struct{} {
 			// If the series has received a write after mint, there's still
 			// data and it's not completely gone yet.
 			if series.lastTs >= mint || series.pendingCommit {
-				series.willDelete = false
-				series.Unlock()
-				continue
-			}
-
-			// The series hasn't received any data and *might* be gone, but
-			// we want to give it an opportunity to come back before marking
-			// it as deleted, so we wait one more GC cycle.
-			if !series.willDelete {
-				series.willDelete = true
 				series.Unlock()
 				continue
 			}
