@@ -85,7 +85,7 @@
   },
 
   limits: {
-    ingestion_rate: 250000,
-    ingestion_burst_size: 500000,
+    ingestion_rate: 2500000,
+    ingestion_burst_size: 5000000,
   },
 }
