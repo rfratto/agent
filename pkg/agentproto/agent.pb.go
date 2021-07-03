@@ -9,11 +9,8 @@ import (
 	proto "github.com/gogo/protobuf/proto"
 	empty "github.com/golang/protobuf/ptypes/empty"
 	grpc "google.golang.org/grpc"
-	codes "google.golang.org/grpc/codes"
-	status "google.golang.org/grpc/status"
 	io "io"
 	math "math"
-	math_bits "math/bits"
 	reflect "reflect"
 	strings "strings"
 )
@@ -27,7 +24,7 @@ var _ = math.Inf
 // is compatible with the proto package it is being compiled against.
 // A compilation error at this line likely means your copy of the
 // proto package needs to be updated.
-const _ = proto.GoGoProtoPackageIsVersion3 // please upgrade the proto package
+const _ = proto.GoGoProtoPackageIsVersion2 // please upgrade the proto package
 
 type ReshardRequest struct {
 }
@@ -45,7 +42,7 @@ func (m *ReshardRequest) XXX_Marshal(b []byte, deterministic bool) ([]byte, erro
 		return xxx_messageInfo_ReshardRequest.Marshal(b, m, deterministic)
 	} else {
 		b = b[:cap(b)]
-		n, err := m.MarshalToSizedBuffer(b)
+		n, err := m.MarshalTo(b)
 		if err != nil {
 			return nil, err
 		}
@@ -168,14 +165,6 @@ type ScrapingServiceServer interface {
 	Reshard(context.Context, *ReshardRequest) (*empty.Empty, error)
 }
 
-// UnimplementedScrapingServiceServer can be embedded to have forward compatible implementations.
-type UnimplementedScrapingServiceServer struct {
-}
-
-func (*UnimplementedScrapingServiceServer) Reshard(ctx context.Context, req *ReshardRequest) (*empty.Empty, error) {
-	return nil, status.Errorf(codes.Unimplemented, "method Reshard not implemented")
-}
-
 func RegisterScrapingServiceServer(s *grpc.Server, srv ScrapingServiceServer) {
 	s.RegisterService(&_ScrapingService_serviceDesc, srv)
 }
@@ -214,7 +203,7 @@ var _ScrapingService_serviceDesc = grpc.ServiceDesc{
 func (m *ReshardRequest) Marshal() (dAtA []byte, err error) {
 	size := m.Size()
 	dAtA = make([]byte, size)
-	n, err := m.MarshalToSizedBuffer(dAtA[:size])
+	n, err := m.MarshalTo(dAtA)
 	if err != nil {
 		return nil, err
 	}
@@ -222,28 +211,21 @@ func (m *ReshardRequest) Marshal() (dAtA []byte, err error) {
 }
 
 func (m *ReshardRequest) MarshalTo(dAtA []byte) (int, error) {
-	size := m.Size()
-	return m.MarshalToSizedBuffer(dAtA[:size])
-}
-
-func (m *ReshardRequest) MarshalToSizedBuffer(dAtA []byte) (int, error) {
-	i := len(dAtA)
+	var i int
 	_ = i
 	var l int
 	_ = l
-	return len(dAtA) - i, nil
+	return i, nil
 }
 
 func encodeVarintAgent(dAtA []byte, offset int, v uint64) int {
-	offset -= sovAgent(v)
-	base := offset
 	for v >= 1<<7 {
 		dAtA[offset] = uint8(v&0x7f | 0x80)
 		v >>= 7
 		offset++
 	}
 	dAtA[offset] = uint8(v)
-	return base
+	return offset + 1
 }
 func (m *ReshardRequest) Size() (n int) {
 	if m == nil {
@@ -255,7 +237,14 @@ func (m *ReshardRequest) Size() (n int) {
 }
 
 func sovAgent(x uint64) (n int) {
-	return (math_bits.Len64(x|1) + 6) / 7
+	for {
+		n++
+		x >>= 7
+		if x == 0 {
+			break
+		}
+	}
+	return n
 }
 func sozAgent(x uint64) (n int) {
 	return sovAgent(uint64((x << 1) ^ uint64((int64(x) >> 63))))

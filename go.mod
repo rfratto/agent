@@ -4,7 +4,7 @@ go 1.16
 
 require (
 	contrib.go.opencensus.io/exporter/prometheus v0.2.0
-	github.com/cortexproject/cortex v1.8.2-0.20210428155238-d382e1d80eaf
+	github.com/cortexproject/cortex v1.9.0
 	github.com/drone/envsubst v1.0.2
 	github.com/fatih/structs v0.0.0-20180123065059-ebf56d35bba7
 	github.com/go-kit/kit v0.10.0
@@ -43,6 +43,7 @@ require (
 	github.com/prometheus/procfs v0.6.1-0.20210313121648-b565fefb1664
 	github.com/prometheus/prometheus v1.8.2-0.20210421143221-52df5ef7a3be
 	github.com/prometheus/statsd_exporter v0.18.1-0.20201124082027-8b2b4c1a2b49
+	github.com/rfratto/croissant v0.0.0-00010101000000-000000000000
 	github.com/sirupsen/logrus v1.7.0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/viper v1.7.1
@@ -56,6 +57,7 @@ require (
 	go.uber.org/zap v1.16.0
 	golang.org/x/sys v0.0.0-20210503173754-0981d6026fa6
 	google.golang.org/grpc v1.37.0
+	google.golang.org/protobuf v1.26.0
 	gopkg.in/alecthomas/kingpin.v2 v2.2.6
 	gopkg.in/yaml.v2 v2.4.0
 	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b
@@ -110,3 +112,6 @@ replace github.com/weaveworks/common => github.com/rfratto/weaveworks-common v0.
 
 // loadbalancingexporter uses non-fixed version of batchpertrace which fetches latest and causes problems
 replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/batchpertrace => github.com/open-telemetry/opentelemetry-collector-contrib/pkg/batchpertrace v0.21.0
+
+// Per-target sharding
+replace github.com/rfratto/croissant => /home/robert/dev/rfratto/croissant

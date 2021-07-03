@@ -1,0 +1,56 @@
+syntax = "proto3";
+
+package metrics.agent.grafana.v1;
+option go_package = "github.com/grafana/agent/pkg/metrics/internal/metricspb";
+
+// Scraper can scrape metrics and deliver them via Prometheus Remote Write.
+service Scraper {
+  // ScrapeTargets provides a set of targets to be scraped along with a config
+  // for where to send metrics.
+  rpc ScrapeTargets(ScrapeTargetsRequest) returns (ScrapeTargetsResponse);
+}
+
+message ScrapeTargetsRequest {
+  // Instance name refers to the metrics.configs[].name field from the Agent config.
+  string instance_name = 1;
+
+  // Targets is the set of targets to collect from.
+  // Corresponds to map[string][]*targetgroup.Group from Prometheus.
+  map<string, TargetSet> targets = 2;
+
+  // Tombstones is the set of targets that have been removed since the
+  // last discovery.
+  map<string, TargetSet> tombstones = 3;
+
+  // Time, in nanoseconds, when these targets were discovered. Receiving a request
+  // with a newer discovery time should always override requests with older times.
+  int64 discovery_time = 4;
+
+  // TTL is how long, in nanoseconds, the group for this discovery_id should
+  // last. New groups with a new discovery_id will be sent every TTL/2
+  // nanoseconds. If the TTL expires without receiving a new discovery_id,
+  // the job should be discarded.
+  int64 ttl = 5;
+}
+
+// TargetSet is a list of target groups. Correponds to []*targetgroup.Group
+// from Prometheus.
+message TargetSet {
+  repeated TargetGroup groups = 1;
+}
+
+// TargetGroup is a group of targets with a related source. Corresponds to
+// *targetgroup.Group from Prometheus.
+message TargetGroup {
+  repeated LabelSet targets = 1;
+  LabelSet labels = 2;
+  string source = 3;
+}
+
+// LabelSet is a set of labels for a target. Corresponds to model.LabelSet
+// from Prometheus.
+message LabelSet {
+  map<string, string> labels = 1;
+}
+
+message ScrapeTargetsResponse { }

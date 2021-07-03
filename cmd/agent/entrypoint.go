@@ -1,15 +1,15 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
 	"sync"
 
 	"github.com/gorilla/mux"
-	"github.com/grafana/agent/pkg/integrations"
-	"github.com/grafana/agent/pkg/loki"
-	"github.com/grafana/agent/pkg/tempo"
+	"github.com/grafana/agent/pkg/cluster"
+	"github.com/grafana/agent/pkg/metrics"
 	"github.com/grafana/agent/pkg/util"
 	"github.com/grafana/agent/pkg/util/server"
 	"github.com/oklog/run"
@@ -17,7 +17,6 @@ import (
 	"gopkg.in/yaml.v2"
 
 	"github.com/grafana/agent/pkg/config"
-	"github.com/grafana/agent/pkg/prom"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/weaveworks/common/signals"
 
@@ -33,11 +32,14 @@ type Entrypoint struct {
 	log *util.Logger
 	cfg config.Config
 
-	srv         *server.Server
-	promMetrics *prom.Agent
-	lokiLogs    *loki.Loki
-	tempoTraces *tempo.Tempo
-	manager     *integrations.Manager
+	cluster *cluster.Cluster
+	srv     *server.Server
+	metrics *metrics.Metrics
+
+	//promMetrics *prom.Agent
+	//lokiLogs    *loki.Loki
+	//tempoTraces *tempo.Tempo
+	//manager     *integrations.Manager
 
 	reloadListener net.Listener
 	reloadServer   *http.Server
@@ -69,25 +71,37 @@ func NewEntrypoint(logger *util.Logger, cfg *config.Config, reloader Reloader) (
 
 	ep.srv = server.New(prometheus.DefaultRegisterer, logger)
 
-	ep.promMetrics, err = prom.New(prometheus.DefaultRegisterer, cfg.Prometheus, logger)
+	ep.cluster, err = cluster.New(logger, prometheus.DefaultRegisterer, cfg.Cluster)
 	if err != nil {
 		return nil, err
 	}
 
-	ep.lokiLogs, err = loki.New(prometheus.DefaultRegisterer, cfg.Loki, logger)
+	ep.metrics, err = metrics.New(prometheus.DefaultRegisterer, logger, cfg.Metrics, ep.cluster)
 	if err != nil {
 		return nil, err
 	}
 
-	ep.tempoTraces, err = tempo.New(ep.lokiLogs, ep.promMetrics.InstanceManager(), prometheus.DefaultRegisterer, cfg.Tempo, cfg.Server.LogLevel.Logrus)
-	if err != nil {
-		return nil, err
-	}
+	/*
+		ep.promMetrics, err = prom.New(prometheus.DefaultRegisterer, cfg.Prometheus, logger)
+		if err != nil {
+			return nil, err
+		}
 
-	ep.manager, err = integrations.NewManager(cfg.Integrations, logger, ep.promMetrics.InstanceManager(), ep.promMetrics.Validate)
-	if err != nil {
-		return nil, err
-	}
+		ep.lokiLogs, err = loki.New(prometheus.DefaultRegisterer, cfg.Loki, logger)
+		if err != nil {
+			return nil, err
+		}
+
+		ep.tempoTraces, err = tempo.New(ep.lokiLogs, ep.promMetrics.InstanceManager(), prometheus.DefaultRegisterer, cfg.Tempo, cfg.Server.LogLevel.Logrus)
+		if err != nil {
+			return nil, err
+		}
+
+		ep.manager, err = integrations.NewManager(cfg.Integrations, logger, ep.promMetrics.InstanceManager(), ep.promMetrics.Validate)
+		if err != nil {
+			return nil, err
+		}
+	*/
 
 	// Mostly everything should be up to date except for the server, which hasn't
 	// been created yet.
@@ -114,26 +128,33 @@ func (ep *Entrypoint) ApplyConfig(cfg config.Config) error {
 		failed = true
 	}
 
-	// Go through each component and update it.
-	if err := ep.promMetrics.ApplyConfig(cfg.Prometheus); err != nil {
-		level.Error(ep.log).Log("msg", "failed to update prometheus", "err", err)
+	if err := ep.metrics.ApplyConfig(cfg.Metrics); err != nil {
+		level.Error(ep.log).Log("msg", "failed to update metrics config", "err", err)
 		failed = true
 	}
 
-	if err := ep.lokiLogs.ApplyConfig(cfg.Loki); err != nil {
-		level.Error(ep.log).Log("msg", "failed to update loki", "err", err)
-		failed = true
-	}
+	/*
+		// Go through each component and update it.
+		if err := ep.promMetrics.ApplyConfig(cfg.Prometheus); err != nil {
+			level.Error(ep.log).Log("msg", "failed to update prometheus", "err", err)
+			failed = true
+		}
 
-	if err := ep.tempoTraces.ApplyConfig(ep.lokiLogs, ep.promMetrics.InstanceManager(), cfg.Tempo, cfg.Server.LogLevel.Logrus); err != nil {
-		level.Error(ep.log).Log("msg", "failed to update tempo", "err", err)
-		failed = true
-	}
+		if err := ep.lokiLogs.ApplyConfig(cfg.Loki); err != nil {
+			level.Error(ep.log).Log("msg", "failed to update loki", "err", err)
+			failed = true
+		}
 
-	if err := ep.manager.ApplyConfig(cfg.Integrations); err != nil {
-		level.Error(ep.log).Log("msg", "failed to update integrations", "err", err)
-		failed = true
-	}
+		if err := ep.tempoTraces.ApplyConfig(ep.lokiLogs, ep.promMetrics.InstanceManager(), cfg.Tempo, cfg.Server.LogLevel.Logrus); err != nil {
+			level.Error(ep.log).Log("msg", "failed to update tempo", "err", err)
+			failed = true
+		}
+
+		if err := ep.manager.ApplyConfig(cfg.Integrations); err != nil {
+			level.Error(ep.log).Log("msg", "failed to update integrations", "err", err)
+			failed = true
+		}
+	*/
 
 	ep.cfg = cfg
 	if failed {
@@ -146,10 +167,13 @@ func (ep *Entrypoint) ApplyConfig(cfg config.Config) error {
 // wire is used to hook up API endpoints to components, and is called every
 // time a new Weaveworks server is creatd.
 func (ep *Entrypoint) wire(mux *mux.Router, grpc *grpc.Server) {
-	ep.promMetrics.WireAPI(mux)
-	ep.promMetrics.WireGRPC(grpc)
-
-	ep.manager.WireAPI(mux)
+	ep.cluster.WireGRPC(grpc)
+	ep.metrics.WireGRPC(grpc)
+	/*
+		ep.promMetrics.WireAPI(mux)
+		ep.promMetrics.WireGRPC(grpc)
+		ep.manager.WireAPI(mux)
+	*/
 
 	mux.HandleFunc("/-/healthy", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
@@ -160,6 +184,8 @@ func (ep *Entrypoint) wire(mux *mux.Router, grpc *grpc.Server) {
 		w.WriteHeader(http.StatusOK)
 		fmt.Fprintf(w, "Agent is Ready.\n")
 	})
+
+	mux.Handle("/-/cluster", ep.cluster)
 
 	mux.HandleFunc("/-/config", func(rw http.ResponseWriter, r *http.Request) {
 		ep.mut.Lock()
@@ -210,11 +236,15 @@ func (ep *Entrypoint) Stop() {
 	ep.mut.Lock()
 	defer ep.mut.Unlock()
 
-	ep.manager.Stop()
-	ep.lokiLogs.Stop()
-	ep.promMetrics.Stop()
-	ep.tempoTraces.Stop()
+	/*
+		ep.manager.Stop()
+		ep.lokiLogs.Stop()
+		ep.promMetrics.Stop()
+		ep.tempoTraces.Stop()
+	*/
+	ep.metrics.Close()
 	ep.srv.Close()
+	ep.cluster.Close()
 
 	if ep.reloadServer != nil {
 		ep.reloadServer.Close()
@@ -249,6 +279,18 @@ func (ep *Entrypoint) Start() error {
 		return ep.srv.Run()
 	}, func(e error) {
 		ep.srv.Close()
+	})
+
+	clusterCtx, stopCluster := context.WithCancel(context.Background())
+	g.Add(func() error {
+		err := ep.cluster.Join(clusterCtx)
+		if err != nil {
+			return err
+		}
+		<-clusterCtx.Done()
+		return nil
+	}, func(e error) {
+		stopCluster()
 	})
 
 	return g.Run()

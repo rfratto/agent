@@ -9,8 +9,10 @@ import (
 	"github.com/weaveworks/common/server"
 
 	"github.com/drone/envsubst"
+	"github.com/grafana/agent/pkg/cluster"
 	"github.com/grafana/agent/pkg/integrations"
 	"github.com/grafana/agent/pkg/loki"
+	"github.com/grafana/agent/pkg/metrics"
 	"github.com/grafana/agent/pkg/prom"
 	"github.com/grafana/agent/pkg/tempo"
 	"github.com/grafana/agent/pkg/util"
@@ -28,7 +30,10 @@ var DefaultConfig = Config{
 
 // Config contains underlying configurations for the agent
 type Config struct {
-	Server       server.Config              `yaml:"server,omitempty"`
+	Server  server.Config  `yaml:"server,omitempty"`
+	Cluster cluster.Config `yaml:"-"`
+
+	Metrics      metrics.Config             `yaml:"metrics,omitempty"`
 	Prometheus   prom.Config                `yaml:"prometheus,omitempty"`
 	Loki         loki.Config                `yaml:"loki,omitempty"`
 	Integrations integrations.ManagerConfig `yaml:"integrations,omitempty"`
@@ -54,6 +59,10 @@ func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 
 // ApplyDefaults sets default values in the config
 func (c *Config) ApplyDefaults() error {
+	if err := c.Metrics.ApplyDefaults(); err != nil {
+		return err
+	}
+
 	if err := c.Prometheus.ApplyDefaults(); err != nil {
 		return err
 	}
@@ -61,6 +70,8 @@ func (c *Config) ApplyDefaults() error {
 	if err := c.Integrations.ApplyDefaults(&c.Prometheus); err != nil {
 		return err
 	}
+
+	c.Cluster.AdvertisePort = c.Server.GRPCListenPort
 
 	c.Prometheus.ServiceConfig.Lifecycler.ListenPort = c.Server.GRPCListenPort
 	c.Integrations.ListenPort = c.Server.HTTPListenPort
@@ -85,8 +96,11 @@ func (c *Config) ApplyDefaults() error {
 func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	c.Server.MetricsNamespace = "agent"
 	c.Server.RegisterInstrumentation = true
-	c.Prometheus.RegisterFlags(f)
 	c.Server.RegisterFlags(f)
+
+	c.Metrics.RegisterFlags(f)
+	c.Prometheus.RegisterFlags(f)
+	c.Cluster.RegisterFlags(f)
 
 	f.StringVar(&c.ReloadAddress, "reload-addr", "127.0.0.1", "address to expose a secondary server for /-/reload on.")
 	f.IntVar(&c.ReloadPort, "reload-port", 0, "port to expose a secondary server for /-/reload on. 0 disables secondary server.")
