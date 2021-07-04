@@ -4,6 +4,16 @@ import "github.com/rfratto/croissant/id"
 
 type RequestParititions = map[id.ID]*ScrapeTargetsRequest
 
+// CountTargets returns the target count in req.
+func CountTargets(req *ScrapeTargetsRequest) (count int) {
+	for _, tset := range req.Targets {
+		for _, group := range tset.Groups {
+			count += len(group.Targets)
+		}
+	}
+	return
+}
+
 // GetPartition gets or makes a partition for key.
 func GetPartition(ps RequestParititions, key id.ID, ref *ScrapeTargetsRequest) *ScrapeTargetsRequest {
 	p, ok := ps[key]
@@ -45,7 +55,7 @@ func GetTargetGroup(tset *TargetSet, ref *TargetGroup) *TargetGroup {
 	var tgroup *TargetGroup
 	for _, g := range tset.Groups {
 		if g.Source == ref.Source {
-			return tgroup
+			return g
 		}
 	}
 	tgroup = &TargetGroup{

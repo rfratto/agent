@@ -75,6 +75,8 @@ func (d *discoveryJob) Close() error {
 }
 
 func (d *discoveryJob) runDiscovery() {
+	defer d.wg.Done()
+
 	// Context already passed to manager in newDiscoveryJob.
 	err := d.mgr.Run()
 	if err != nil {
@@ -88,32 +90,58 @@ func (d *discoveryJob) runTargetSharding(ctx context.Context) {
 	defer d.wg.Done()
 	defer level.Debug(d.log).Log("msg", "target sharding stopped")
 
-	// Previous set of targets. Used for calculating tombstones.
-	prev := make(map[string][]*targetgroup.Group)
+	// TODO(rfratto): configurable TTL?
+	ttl := time.Minute * 3
+	shardTimeout := ttl / 4
 
+	// Cache of previous syncs.
+	var (
+		// Used for calculating tombstones
+		prev = make(map[string][]*targetgroup.Group)
+		// Used for refreshing TTL.
+		lastReq *metricspb.ScrapeTargetsRequest
+	)
+
+Loop:
 	for {
 		select {
 		case <-ctx.Done():
 			return
-		// TODO(rfratto): re-sync every 1/2 TTL or if peers change / nodes fail.
-		case tgs := <-d.mgr.SyncCh():
-			// TODO(rfratto): timeout on shard?
-			shardReq := d.buildShardRequest(prev, tgs)
-			_, _ = d.dist.ScrapeTargets(context.Background(), shardReq)
+		case <-time.After(ttl / 2):
+			if lastReq == nil {
+				continue Loop
+			}
 
-			// Update previous set of targets for the next tombstone detection.
+			level.Info(d.log).Log("msg", "forcing new target distribution")
+
+			// Update the DiscoveryTime so the TTL is refreshed.
+			lastReq.DiscoveryTime = time.Now().UnixNano()
+
+			ctx, cancel := context.WithTimeout(context.Background(), shardTimeout)
+			_, _ = d.dist.ScrapeTargets(ctx, lastReq)
+			cancel()
+		case tgs := <-d.mgr.SyncCh():
+			ctx, cancel := context.WithTimeout(context.Background(), shardTimeout)
+
+			shardReq := d.buildShardRequest(prev, tgs, ttl)
+			_, _ = d.dist.ScrapeTargets(ctx, shardReq)
+
+			// Update cache.
 			prev = tgs
+			lastReq = shardReq
+
+			cancel()
 		}
 	}
 }
 
-func (d *discoveryJob) buildShardRequest(prev, cur map[string][]*targetgroup.Group) *metricspb.ScrapeTargetsRequest {
+func (d *discoveryJob) buildShardRequest(prev, cur map[string][]*targetgroup.Group, ttl time.Duration) *metricspb.ScrapeTargetsRequest {
 	req := &metricspb.ScrapeTargetsRequest{
 		InstanceName:  d.key,
 		Targets:       make(map[string]*metricspb.TargetSet),
 		Tombstones:    make(map[string]*metricspb.TargetSet),
 		DiscoveryTime: time.Now().UnixNano(),
-		Ttl:           int64(3 * time.Minute), // TODO(rfratto): configurable?
+		Ttl:           int64(ttl),
 	}
 
 	// Easy part: copy over targets from cur.

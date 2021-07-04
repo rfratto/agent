@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/agent/pkg/util"
 	"github.com/grafana/agent/pkg/util/server"
 	"github.com/oklog/run"
+	"github.com/rfratto/croissant/node"
 	"google.golang.org/grpc"
 	"gopkg.in/yaml.v2"
 
@@ -71,7 +72,7 @@ func NewEntrypoint(logger *util.Logger, cfg *config.Config, reloader Reloader) (
 
 	ep.srv = server.New(prometheus.DefaultRegisterer, logger)
 
-	ep.cluster, err = cluster.New(logger, prometheus.DefaultRegisterer, cfg.Cluster)
+	ep.cluster, err = cluster.New(logger, prometheus.DefaultRegisterer, cfg.Cluster, ep)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +110,10 @@ func NewEntrypoint(logger *util.Logger, cfg *config.Config, reloader Reloader) (
 		return nil, err
 	}
 	return ep, nil
+}
+
+func (ep *Entrypoint) PeersChanged(ps []node.Peer) {
+	ep.metrics.PeersChanged(ps)
 }
 
 // ApplyConfig applies changes to the subsystems of the Agent.

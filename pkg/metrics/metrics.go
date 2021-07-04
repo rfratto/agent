@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"context"
 	"errors"
 	"flag"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
 	"github.com/rfratto/croissant/id"
+	"github.com/rfratto/croissant/node"
 	"google.golang.org/grpc"
 )
 
@@ -151,15 +153,17 @@ Loop:
 			}
 			break Loop
 		case <-m.reload:
-			// TODO(rfratto): If our set of peers changes, we need to reload discovery jobs
-			level.Info(m.log).Log("msg", "reloading discovery jobs")
 			m.syncDiscoverers()
+			m.distributor.Reshard(context.Background())
 		}
 	}
 }
 
 // syncDiscoverers manages Prometheus SD components.
 func (m *Metrics) syncDiscoverers() {
+	level.Info(m.log).Log("msg", "syncing discoverers")
+	defer level.Info(m.log).Log("msg", "done syncing discoverers")
+
 	newJobs := map[string]struct{}{}
 
 	for _, ic := range m.cfg.Configs {
@@ -205,10 +209,16 @@ func (m *Metrics) syncDiscoverers() {
 	for job := range m.discoverers {
 		_, ok := newJobs[job]
 		if !ok {
+			level.Debug(m.log).Log("msg", "shutting down unused discoverer", "job", job)
 			_ = m.discoverers[job].Close()
 			delete(m.discoverers, job)
 		}
 	}
+}
+
+func (m *Metrics) PeersChanged(ps []node.Peer) {
+	level.Info(m.log).Log("msg", "detected peers changed")
+	m.reload <- struct{}{}
 }
 
 func (m *Metrics) ApplyConfig(cfg Config) error {

@@ -213,14 +213,15 @@ func mergeTargets(dest, src map[string]*metricspb.TargetSet) {
 
 		for _, srcGroup := range srcTset.Groups {
 			destGroup := metricspb.GetTargetGroup(destTset, srcGroup)
-			destGroup.Targets = append(destGroup.Targets, srcGroup.Targets...)
+			destGroup.Targets = append(destGroup.Targets, srcGroup.GetTargets()...)
 		}
 	}
 }
 
 // Reshard redistributes the set of local targets.
 func (d *distributor) Reshard(ctx context.Context) error {
-	// TODO(rfratto): call this if the leaves changes.
+	level.Info(d.log).Log("msg", "redistributing targets")
+	defer level.Info(d.log).Log("msg", "finished redistributing targets")
 
 	d.localMut.Lock()
 	locals := make([]*metricspb.ScrapeTargetsRequest, 0, len(d.local))
@@ -247,12 +248,14 @@ func (d *distributor) scrapeLocalTargets(ctx context.Context, req *metricspb.Scr
 		return
 	}
 
-	// TODO(rfratto): discovery should detect any failed node in the routing table at all and
-	// immediately flush its targets again.
-
 	// Launch a new scraper if we need to.
 	sc, ok := d.scrapers[req.InstanceName]
 	if !ok {
+		if metricspb.CountTargets(req) == 0 {
+			// Nothing to do here, there's no targets.
+			return
+		}
+
 		var err error
 		sc, err = newScraper(d.log, d.reg, d.cfg, req.InstanceName)
 		if err != nil {

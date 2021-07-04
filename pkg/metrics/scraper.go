@@ -13,6 +13,7 @@ import (
 	"github.com/grafana/agent/pkg/metrics/internal/metricspb"
 	"github.com/grafana/agent/pkg/prom/instance"
 	"github.com/grafana/agent/pkg/prom/wal"
+	"github.com/grafana/agent/pkg/util"
 	"github.com/oklog/run"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/prometheus/config"
@@ -27,7 +28,8 @@ type scraper struct {
 	log log.Logger
 
 	// Instance name to pull config from.
-	name string
+	name  string
+	unreg *util.Unregisterer
 
 	tracker *targetTracker
 
@@ -41,6 +43,8 @@ type scraper struct {
 }
 
 func newScraper(logger log.Logger, reg prometheus.Registerer, cfg Config, name string) (*scraper, error) {
+	unreg := util.WrapWithUnregisterer(reg)
+
 	logger = log.With(logger, "instance", name)
 	var (
 		walLogger    = log.With(logger, "prometheus_component", "wal")
@@ -50,14 +54,14 @@ func newScraper(logger log.Logger, reg prometheus.Registerer, cfg Config, name s
 
 	// Create Prometheus storage (WAL & remote write)
 	walDir := filepath.Join(cfg.WALDir, name)
-	w, err := wal.NewStorage(walLogger, reg, walDir)
+	w, err := wal.NewStorage(walLogger, unreg, walDir)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create WAL at %s: %w", walDir, err)
 	}
 
 	// TODO(rfratto): make RemoteFlushDeadline a global setting (time.Minute below)
 	rsm := &readyScrapeManager{}
-	rs := remote.NewStorage(remoteLogger, reg, w.StartTime, walDir, time.Minute, rsm)
+	rs := remote.NewStorage(remoteLogger, unreg, w.StartTime, walDir, time.Minute, rsm)
 	s := storage.NewFanout(logger, w, rs)
 
 	// Create Prometheus metrics scraper
@@ -65,8 +69,9 @@ func newScraper(logger log.Logger, reg prometheus.Registerer, cfg Config, name s
 
 	ctx, cancel := context.WithCancel(context.Background())
 	res := &scraper{
-		name: name,
-		log:  logger,
+		name:  name,
+		log:   logger,
+		unreg: unreg,
 
 		tracker: newTargetTracker(),
 
@@ -130,6 +135,8 @@ func (s *scraper) Track(ctx context.Context, req *metricspb.ScrapeTargetsRequest
 func (s *scraper) Close() error {
 	s.cancel()
 	<-s.done
+
+	s.unreg.UnregisterAll()
 	return nil
 }
 

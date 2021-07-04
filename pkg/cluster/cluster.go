@@ -61,7 +61,7 @@ type Cluster struct {
 }
 
 // New creates a new Cluster.
-func New(l log.Logger, reg prometheus.Registerer, cfg Config) (*Cluster, error) {
+func New(l log.Logger, reg prometheus.Registerer, cfg Config, app node.Application) (*Cluster, error) {
 	if l == nil {
 		l = log.NewNopLogger()
 	}
@@ -94,7 +94,7 @@ func New(l log.Logger, reg prometheus.Registerer, cfg Config) (*Cluster, error) 
 			BroadcastAddr: fmt.Sprintf("%s:%d", cfg.AdvertiseAddr, cfg.AdvertisePort),
 			Log:           l,
 		},
-		noopApplication{},
+		app,
 		grpc.WithInsecure(), // TODO(rfratto): this won't work if agent is running with TLS
 	)
 	if err != nil {
@@ -146,7 +146,3 @@ func (c *Cluster) Close() error {
 	level.Info(c.log).Log("msg", "closing cluster connection")
 	return c.node.Close()
 }
-
-type noopApplication struct{}
-
-func (noopApplication) PeersChanged([]node.Peer) {}
