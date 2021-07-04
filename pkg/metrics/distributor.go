@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
@@ -14,8 +15,6 @@ import (
 	"github.com/rfratto/croissant/node"
 	"go.uber.org/atomic"
 )
-
-// TODO(rfratto): targets ttl?
 
 // distributor performs target sharding and manages local scrape jobs.
 // distributors receive targets in two ways: via the local process
@@ -47,6 +46,10 @@ type distributor struct {
 	log     log.Logger
 	cluster *cluster.Cluster
 
+	// Used for run()
+	done   chan struct{}
+	cancel context.CancelFunc
+
 	// Cache of the local targets. Updated when ScrapeTargets is called.
 	// Keyed by metricspb.ScrapeTargetsRequest.InstanceName.
 	localMut sync.Mutex
@@ -58,11 +61,16 @@ type distributor struct {
 }
 
 func newDistributor(reg prometheus.Registerer, log log.Logger, cfg Config, cluster *cluster.Cluster) (*distributor, error) {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	dist := &distributor{
 		reg:     reg,
 		cfg:     cfg,
 		log:     log,
 		cluster: cluster,
+
+		done:   make(chan struct{}),
+		cancel: cancel,
 
 		local:    make(map[string]*metricspb.ScrapeTargetsRequest),
 		scrapers: make(map[string]*scraper),
@@ -70,13 +78,52 @@ func newDistributor(reg prometheus.Registerer, log log.Logger, cfg Config, clust
 	if err := dist.ApplyConfig(cfg); err != nil {
 		return nil, fmt.Errorf("failed to create target sharder: %w", err)
 	}
+
+	go dist.run(ctx)
 	return dist, nil
+}
+
+func (d *distributor) run(ctx context.Context) {
+	close(d.done)
+
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+			// Check for expired target batches. This only affects the local node and
+			// does not inform peers that the targets have expired. Each peer should be
+			// responsible for performing target expiration.
+
+			d.localMut.Lock()
+			for key, l := range d.local {
+				exp := time.Unix(0, l.DiscoveryTime).Add(time.Duration(l.Ttl))
+				if time.Now().Before(exp) {
+					continue
+				}
+
+				level.Info(d.log).Log("msg", "clearing expired targets for metrics instance", "instance", key)
+
+				l.Targets = make(map[string]*metricspb.TargetSet)
+				l.Tombstones = make(map[string]*metricspb.TargetSet)
+				d.scrapeLocalTargets(context.Background(), l)
+				delete(d.local, key)
+			}
+			d.localMut.Unlock()
+		}
+	}
 }
 
 // ScrapeTargets appends new targets to the distributor. Targets not belonging
 // to it will be forwarded, otherwise local scrapers will be updated to start
 // collecting from those targets.
 func (d *distributor) ScrapeTargets(ctx context.Context, req *metricspb.ScrapeTargetsRequest) (*metricspb.ScrapeTargetsResponse, error) {
+	exp := time.Unix(0, req.DiscoveryTime).Add(time.Duration(req.Ttl))
+	if time.Now().After(exp) {
+		level.Info(d.log).Log("msg", "ignoring expired target set")
+		return &metricspb.ScrapeTargetsResponse{}, nil
+	}
+
 	// Pushing a new req is the same as resharding, except the local targets are
 	// merged before redistributing.
 	d.localMut.Lock()
@@ -307,6 +354,7 @@ func (d *distributor) Close() error {
 	d.scraperMut.Lock()
 	defer d.scraperMut.Unlock()
 
+	d.cancel()
 	d.closed.Store(true)
 
 	for _, sc := range d.scrapers {
@@ -314,5 +362,6 @@ func (d *distributor) Close() error {
 	}
 	d.scrapers = make(map[string]*scraper)
 
+	<-d.done
 	return nil
 }
