@@ -5,6 +5,8 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
+	stdlog "log"
 	"net/http"
 	"os"
 	"strings"
@@ -14,6 +16,8 @@ import (
 	"github.com/cortexproject/cortex/pkg/util/flagext"
 	"github.com/go-kit/kit/log"
 	"github.com/go-kit/kit/log/level"
+	"github.com/hashicorp/go-discover"
+	"github.com/hashicorp/go-discover/provider/k8s"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/rfratto/croissant/id"
 	"github.com/rfratto/croissant/node"
@@ -31,6 +35,8 @@ type Config struct {
 
 	// List of Peers to join.
 	Peers flagext.StringSlice
+
+	DiscoverPeers string
 }
 
 // DefaultConfig holds default options for clustering.
@@ -46,7 +52,8 @@ func (c *Config) RegisterFlags(f *flag.FlagSet) {
 	f.StringVar(&c.AdvertiseAddr, "cluster.advertise-addr", DefaultConfig.AdvertiseAddr, "IP address to advertise to peers. If not set, defaults to the first IP found from cluster.advertise-interfaces.")
 	f.Var(&c.AdvertiseInterfaces, "cluster.advertise-interfaces", "Interfaces to use for discovering advertise address. Mutually exclusive with setting cluster.advertise-addr.")
 
-	f.Var(&c.Peers, "cluster.join-peers", "List of peers to join when starting up.")
+	f.Var(&c.Peers, "cluster.join-peers", "List of peers to join when starting up. Mutally exclusive with cluster.discover-peers.")
+	f.StringVar(&c.DiscoverPeers, "cluster.discover-peers", "", "Hashicorp cloud discover string. Mutally exclusive with cluster.join-peers.")
 }
 
 // Cluster is a cluster of Agents using a hash ring to distribute work.
@@ -78,6 +85,10 @@ func New(l log.Logger, reg prometheus.Registerer, cfg Config, app node.Applicati
 		cfg.NodeName = hn
 	}
 
+	if len(cfg.Peers) > 0 && cfg.DiscoverPeers != "" {
+		return nil, fmt.Errorf("only one of cluster.join-peers and cluster.discover-peers can be set.")
+	}
+
 	if cfg.AdvertiseAddr == "" {
 		var err error
 		cfg.AdvertiseAddr, err = util.GetFirstAddressOf(cfg.AdvertiseInterfaces)
@@ -86,7 +97,7 @@ func New(l log.Logger, reg prometheus.Registerer, cfg Config, app node.Applicati
 		}
 	}
 
-	nID := id.NewGenerator(32).Get(cfg.NodeName)
+	nID := NewKeyGenerator(32).Get(cfg.NodeName)
 
 	n, err := node.New(
 		node.Config{
@@ -120,8 +131,37 @@ func (c *Cluster) WaitJoined() {
 func (c *Cluster) Join(ctx context.Context) error {
 	defer c.closeStarted.Do(func() { close(c.started) })
 
-	level.Info(c.log).Log("msg", "joining cluster", "peers", strings.Join(c.cfg.Peers, ","))
-	return c.node.Join(ctx, c.cfg.Peers)
+	peers := []string(c.cfg.Peers)
+	if c.cfg.DiscoverPeers != "" {
+		discoverCfg, err := discover.Parse(c.cfg.DiscoverPeers)
+		if err != nil {
+			return fmt.Errorf("failed to parse discovery string: %w", err)
+		}
+
+		providers := make(map[string]discover.Provider)
+		for k, v := range discover.Providers {
+			providers[k] = v
+		}
+		providers["k8s"] = &k8s.Provider{}
+
+		d, err := discover.New(
+			discover.WithProviders(providers),
+		)
+		if err != nil {
+			return fmt.Errorf("failed to boostrap peer discovery: %w", err)
+		}
+
+		addrs, err := d.Addrs(discoverCfg.String(), stdlog.New(io.Discard, "", 0))
+		if err != nil {
+			return fmt.Errorf("failed to discover seeds to join: %w", err)
+		}
+		for _, addr := range addrs {
+			peers = append(peers, fmt.Sprintf("%s:%d", addr, c.cfg.AdvertisePort))
+		}
+	}
+
+	level.Info(c.log).Log("msg", "joining cluster", "peers", strings.Join(peers, ","))
+	return c.node.Join(ctx, peers)
 }
 
 // Node returns the local node for the cluster.

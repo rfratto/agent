@@ -17,6 +17,7 @@ require (
 	github.com/gorilla/mux v1.8.0
 	github.com/grafana/loki v1.6.2-0.20210429132126-d88f3996eaa2
 	github.com/hashicorp/consul/api v1.8.1
+	github.com/hashicorp/go-discover v0.0.0-20201029210230-738cb3105cd0 // indirect
 	github.com/hashicorp/go-getter v1.5.3
 	github.com/jsternberg/zap-logfmt v1.2.0
 	github.com/justwatchcom/elasticsearch_exporter v1.1.0
@@ -43,7 +44,7 @@ require (
 	github.com/prometheus/procfs v0.6.1-0.20210313121648-b565fefb1664
 	github.com/prometheus/prometheus v1.8.2-0.20210421143221-52df5ef7a3be
 	github.com/prometheus/statsd_exporter v0.18.1-0.20201124082027-8b2b4c1a2b49
-	github.com/rfratto/croissant v0.0.0-00010101000000-000000000000
+	github.com/rfratto/croissant v0.0.0-20210704164226-408e2af25d4e // indirect
 	github.com/sirupsen/logrus v1.7.0
 	github.com/spf13/cobra v1.1.3
 	github.com/spf13/viper v1.7.1
@@ -112,6 +113,3 @@ replace github.com/weaveworks/common => github.com/rfratto/weaveworks-common v0.
 
 // loadbalancingexporter uses non-fixed version of batchpertrace which fetches latest and causes problems
 replace github.com/open-telemetry/opentelemetry-collector-contrib/pkg/batchpertrace => github.com/open-telemetry/opentelemetry-collector-contrib/pkg/batchpertrace v0.21.0
-
-// Per-target sharding
-replace github.com/rfratto/croissant => /home/robert/dev/rfratto/croissant

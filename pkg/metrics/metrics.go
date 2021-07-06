@@ -5,6 +5,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/go-kit/kit/log"
@@ -168,6 +169,7 @@ func (m *Metrics) syncDiscoverers() {
 
 	for _, ic := range m.cfg.Configs {
 		ourJobs := make([]*config.ScrapeConfig, 0, len(ic.ScrapeConfigs))
+		jobNames := make([]string, 0, len(ic.ScrapeConfigs))
 
 		for _, sc := range ic.ScrapeConfigs {
 			_, self, err := m.cluster.Node().NextPeer(getKey(ic.Name + "/" + sc.JobName))
@@ -179,10 +181,12 @@ func (m *Metrics) syncDiscoverers() {
 				level.Warn(m.log).Log("msg", "could not determine ownership for scrape job, forcing ownership", "err", err)
 				ourJobs = append(ourJobs, sc)
 			} else if self {
-				level.Debug(m.log).Log("msg", "determined responsibility for scrape job", "instance", ic.Name, "job", sc.JobName)
 				ourJobs = append(ourJobs, sc)
+				jobNames = append(jobNames, sc.JobName)
 			}
 		}
+
+		level.Debug(m.log).Log("msg", "determined responsibility for scrape job", "instance", ic.Name, "jobs", strings.Join(jobNames, ","))
 
 		if len(ourJobs) == 0 {
 			continue
@@ -238,5 +242,5 @@ func (m *Metrics) Close() error {
 }
 
 func getKey(s string) id.ID {
-	return id.NewGenerator(32).Get(s)
+	return cluster.NewKeyGenerator(32).Get(s)
 }

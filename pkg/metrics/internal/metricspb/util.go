@@ -19,10 +19,11 @@ func GetPartition(ps RequestParititions, key id.ID, ref *ScrapeTargetsRequest) *
 	p, ok := ps[key]
 	if !ok {
 		p = &ScrapeTargetsRequest{
-			InstanceName: ref.InstanceName,
-			Targets:      make(map[string]*TargetSet),
-			Tombstones:   make(map[string]*TargetSet),
-			Ttl:          ref.Ttl,
+			InstanceName:  ref.InstanceName,
+			Targets:       make(map[string]*TargetSet),
+			Tombstones:    make(map[string]*TargetSet),
+			DiscoveryTime: ref.DiscoveryTime,
+			Ttl:           ref.Ttl,
 		}
 		ps[key] = p
 	}

@@ -115,7 +115,7 @@ Loop:
 			level.Info(d.log).Log("msg", "forcing new target distribution")
 
 			// Update the DiscoveryTime so the TTL is refreshed.
-			lastReq.DiscoveryTime = time.Now().UnixNano()
+			lastReq.DiscoveryTime = time.Now().UTC().UnixNano()
 
 			ctx, cancel := context.WithTimeout(context.Background(), shardTimeout)
 			_, _ = d.dist.ScrapeTargets(ctx, lastReq)
@@ -140,7 +140,7 @@ func (d *discoveryJob) buildShardRequest(prev, cur map[string][]*targetgroup.Gro
 		InstanceName:  d.key,
 		Targets:       make(map[string]*metricspb.TargetSet),
 		Tombstones:    make(map[string]*metricspb.TargetSet),
-		DiscoveryTime: time.Now().UnixNano(),
+		DiscoveryTime: time.Now().UTC().UnixNano(),
 		Ttl:           int64(ttl),
 	}
 

@@ -98,11 +98,12 @@ func (d *distributor) run(ctx context.Context) {
 			d.localMut.Lock()
 			for key, l := range d.local {
 				exp := time.Unix(0, l.DiscoveryTime).Add(time.Duration(l.Ttl))
-				if time.Now().Before(exp) {
+				now := time.Now().UTC()
+				if now.Before(exp) {
 					continue
 				}
 
-				level.Info(d.log).Log("msg", "clearing expired targets for metrics instance", "instance", key)
+				level.Info(d.log).Log("msg", "clearing expired targets for metrics instance", "now", now, "exp", exp, "ttl", time.Duration(l.Ttl))
 
 				l.Targets = make(map[string]*metricspb.TargetSet)
 				l.Tombstones = make(map[string]*metricspb.TargetSet)
@@ -119,8 +120,9 @@ func (d *distributor) run(ctx context.Context) {
 // collecting from those targets.
 func (d *distributor) ScrapeTargets(ctx context.Context, req *metricspb.ScrapeTargetsRequest) (*metricspb.ScrapeTargetsResponse, error) {
 	exp := time.Unix(0, req.DiscoveryTime).Add(time.Duration(req.Ttl))
-	if time.Now().After(exp) {
-		level.Info(d.log).Log("msg", "ignoring expired target set")
+	now := time.Now().UTC()
+	if now.After(exp) {
+		level.Info(d.log).Log("msg", "ignoring expired target set", "now", now, "exp", exp, "ttl", time.Duration(req.Ttl))
 		return &metricspb.ScrapeTargetsResponse{}, nil
 	}
 
