@@ -36,7 +36,7 @@ GO_LDFLAGS      := -X $(VPREFIX).Branch=$(GIT_BRANCH) -X $(VPREFIX).Version=$(IM
 GO_FLAGS        := -ldflags "-extldflags \"-static\" -s -w $(GO_LDFLAGS)" -tags "netgo static_build"
 DEBUG_GO_FLAGS  := -gcflags "all=-N -l" -ldflags "-extldflags \"-static\" $(GO_LDFLAGS)" -tags "netgo static_build"
 CGO_FLAGS       := -ldflags "-s -w $(GO_LDFLAGS)" -tags "netgo"
-DEBUG_CGO_FLAGS := -gcflags "all=-N -l" -ldflags "-s -w $(GO_LDFLAGS)" -tags "netgo"
+DEBUG_CGO_FLAGS := -gcflags "all=-N -l" -ldflags "$(GO_LDFLAGS)" -tags "netgo"
 
 ifeq ($(RELEASE_BUILD),false)
 GO_FLAGS = $(DEBUG_GO_FLAGS)
