@@ -119,6 +119,8 @@ func (w *worker) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
+
+	fmt.Println(w.refreshInterval.Seconds())
 	req.Header.Set("X-Prometheus-Refresh-Interval-Seconds", strconv.FormatFloat(w.refreshInterval.Seconds(), 'f', -1, 64))
 
 	resp, err := w.client.Do(req.WithContext(ctx))

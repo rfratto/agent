@@ -98,7 +98,7 @@ func (s *Service) URL() *url.URL {
 	return &url.URL{
 		Scheme:   s.labels.Get(model.SchemeLabel),
 		Host:     s.labels.Get(model.AddressLabel),
-		Path:     s.labels.Get(model.MetricsPathLabel),
+		Path:     s.labels.Get(APIPathLabel),
 		RawQuery: params.Encode(),
 	}
 }
