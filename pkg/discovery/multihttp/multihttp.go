@@ -110,7 +110,7 @@ type servicePool struct {
 	mut             sync.Mutex
 	allServices     []*Service
 	droppedServices []*Service
-	activeWorkers   map[uint64]*worker // Running workers for services
+	activeWorkers   map[uint64]*httpWorker // Running workers for services
 }
 
 func newServicePool(l log.Logger, cfg *Config, cli *http.Client) *servicePool {
@@ -214,7 +214,7 @@ func (p *servicePool) sync(ctx context.Context, groups []*targetgroup.Group) {
 // workers for services that go away between calls will be removed, while new
 // workers will be created for new services.
 func (p *servicePool) schedule(ctx context.Context, svcs []*Service) {
-	uniqueWorkers := make(map[uint64]*worker)
+	uniqueWorkers := make(map[uint64]*httpWorker)
 
 	for _, svc := range svcs {
 		hash := svc.hash()
@@ -247,7 +247,7 @@ func (p *servicePool) schedule(ctx context.Context, svcs []*Service) {
 	for hash, w := range p.activeWorkers {
 		if _, ok := uniqueWorkers[hash]; !ok {
 			stoppedWorkers.Add(1)
-			go func(w *worker) {
+			go func(w *httpWorker) {
 				defer stoppedWorkers.Done()
 				w.Stop()
 			}(w)

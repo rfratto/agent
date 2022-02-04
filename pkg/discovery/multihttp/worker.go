@@ -26,7 +26,24 @@ var (
 	matchContentType = regexp.MustCompile(`^(?i:application\/json(;\s*charset=("utf-8"|utf-8))?)$`)
 )
 
-type worker struct {
+// worker collects targets in the background.
+type worker interface {
+	// Run starts the worker and returns once the worker is stopped. Run must not
+	// be called more than once.
+	//
+	// refresh should be called whenever there is a new set of targets that can
+	// be retrieved.
+	Run(refresh func())
+
+	// Targets returns the latest set of targets the worker collected.
+	Targets() []*targetgroup.Group
+
+	// Stop cancels the worker. Blocks until the worker exits.
+	Stop()
+}
+
+// httpWorker collects targets by invoking an HTTP endpoint.
+type httpWorker struct {
 	log log.Logger
 	svc *Service
 
@@ -45,9 +62,9 @@ type worker struct {
 }
 
 // newWorker initializes a new worker. It should be started by calling Run.
-func newWorker(ctx context.Context, log log.Logger, client *http.Client, cfg *Config, svc *Service) *worker {
+func newWorker(ctx context.Context, log log.Logger, client *http.Client, cfg *Config, svc *Service) *httpWorker {
 	ctx, cancel := context.WithCancel(ctx)
-	return &worker{
+	return &httpWorker{
 		log: log,
 		svc: svc,
 
@@ -67,7 +84,7 @@ func newWorker(ctx context.Context, log log.Logger, client *http.Client, cfg *Co
 //
 // refresh will be written to when new targets are available. Call Targets to
 // retrieve them.
-func (w *worker) Run(refresh chan<- struct{}) {
+func (w *httpWorker) Run(refresh chan<- struct{}) {
 	defer close(w.exited)
 
 	t := time.NewTicker(w.refreshInterval)
@@ -102,14 +119,14 @@ func (w *worker) Run(refresh chan<- struct{}) {
 	}
 }
 
-func (w *worker) Targets() []*targetgroup.Group {
+func (w *httpWorker) Targets() []*targetgroup.Group {
 	w.mut.RLock()
 	defer w.mut.RUnlock()
 	return w.currentTargets
 }
 
 // refresh refreshes the service.
-func (w *worker) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
+func (w *httpWorker) refresh(ctx context.Context) ([]*targetgroup.Group, error) {
 	ctx, cancel := context.WithTimeout(ctx, w.refreshTimeout)
 	defer cancel()
 
@@ -171,7 +188,7 @@ func urlSource(url string, i int) string {
 }
 
 // Stop the worker, waiting until it finishes.
-func (w *worker) Stop() {
+func (w *httpWorker) Stop() {
 	w.cancel()
 	<-w.exited
 }

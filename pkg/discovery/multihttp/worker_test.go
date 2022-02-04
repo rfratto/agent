@@ -133,6 +133,8 @@ func Test_worker_refresh(t *testing.T) {
 				Source: fmt.Sprintf("%s:0", w.url),
 			},
 			{
+				// Targets and Labels should be unset here to signal there was a group
+				// that went away.
 				Source: fmt.Sprintf("%s:1", w.url),
 			},
 		}
@@ -146,7 +148,7 @@ func Test_worker_refresh(t *testing.T) {
 
 // newTestWorker creates a worker which will invoke the provided handler every
 // refresh.
-func newTestWorker(ctx context.Context, t *testing.T, h http.Handler) *worker {
+func newTestWorker(ctx context.Context, t *testing.T, h http.Handler) *httpWorker {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 
