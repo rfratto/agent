@@ -28,10 +28,7 @@ func Test_worker_refresh(t *testing.T) {
 	}}
 
 	t.Run("sets refresh interval and timeout", func(t *testing.T) {
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-		defer cancel()
-
-		w := newTestWorker(ctx, t, http.NotFoundHandler())
+		w := newTestWorker(t, http.NotFoundHandler())
 
 		require.Equal(t, time.Duration(DefaultConfig.RefreshInterval), w.refreshInterval)
 		require.Equal(t, time.Duration(DefaultConfig.RefreshTimeout), w.refreshTimeout)
@@ -49,7 +46,7 @@ func Test_worker_refresh(t *testing.T) {
 			_ = json.NewEncoder(rw).Encode(emitGroups)
 		}
 
-		w := newTestWorker(ctx, t, http.HandlerFunc(h))
+		w := newTestWorker(t, http.HandlerFunc(h))
 		_, err := w.refresh(ctx)
 		require.NoError(t, err)
 
@@ -67,7 +64,7 @@ func Test_worker_refresh(t *testing.T) {
 			_ = json.NewEncoder(rw).Encode(emitGroups)
 		}
 
-		w := newTestWorker(ctx, t, http.HandlerFunc(h))
+		w := newTestWorker(t, http.HandlerFunc(h))
 
 		expect := []*targetgroup.Group{{
 			Targets: []model.LabelSet{{
@@ -95,7 +92,7 @@ func Test_worker_refresh(t *testing.T) {
 			_ = json.NewEncoder(rw).Encode([]workerAPIResult{})
 		}
 
-		w := newTestWorker(ctx, t, http.HandlerFunc(h))
+		w := newTestWorker(t, http.HandlerFunc(h))
 		w.lastGroupsCount = 2
 
 		expect := []*targetgroup.Group{
@@ -118,7 +115,7 @@ func Test_worker_refresh(t *testing.T) {
 			_ = json.NewEncoder(rw).Encode(emitGroups)
 		}
 
-		w := newTestWorker(ctx, t, http.HandlerFunc(h))
+		w := newTestWorker(t, http.HandlerFunc(h))
 		w.lastGroupsCount = 2
 
 		expect := []*targetgroup.Group{
@@ -148,7 +145,7 @@ func Test_worker_refresh(t *testing.T) {
 
 // newTestWorker creates a worker which will invoke the provided handler every
 // refresh.
-func newTestWorker(ctx context.Context, t *testing.T, h http.Handler) *httpWorker {
+func newTestWorker(t *testing.T, h http.Handler) *httpWorker {
 	srv := httptest.NewServer(h)
 	t.Cleanup(srv.Close)
 
@@ -159,7 +156,7 @@ func newTestWorker(ctx context.Context, t *testing.T, h http.Handler) *httpWorke
 	})
 	svc := NewService(lset, lset, nil)
 
-	return newWorker(ctx, log.NewNopLogger(), http.DefaultClient, &DefaultConfig, svc)
+	return newHTTPWorker(log.NewNopLogger(), http.DefaultClient, svc.URL().String(), &DefaultConfig)
 }
 
 type workerAPIResult targetgroup.Group

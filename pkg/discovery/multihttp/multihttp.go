@@ -110,7 +110,26 @@ type servicePool struct {
 	mut             sync.Mutex
 	allServices     []*Service
 	droppedServices []*Service
-	activeWorkers   map[uint64]*httpWorker // Running workers for services
+	activeWorkers   map[uint64]*pooledWorker // Running workers for services
+
+	// Constructor for workers. Settable for tests; defaults to calling
+	// newHTTPWorker.
+	newWorker func(opts workerOptions) worker
+}
+
+type pooledWorker struct {
+	worker worker
+	svc    *Service
+	ctx    context.Context
+	cancel context.CancelFunc
+	done   chan struct{}
+}
+
+type workerOptions struct {
+	log    log.Logger
+	client *http.Client
+	cfg    *Config
+	url    string
 }
 
 func newServicePool(l log.Logger, cfg *Config, cli *http.Client) *servicePool {
@@ -121,6 +140,12 @@ func newServicePool(l log.Logger, cfg *Config, cli *http.Client) *servicePool {
 
 		targets:     make(chan []*targetgroup.Group),
 		triggerSend: make(chan struct{}, 1),
+
+		activeWorkers: make(map[uint64]*pooledWorker),
+
+		newWorker: func(opts workerOptions) worker {
+			return newHTTPWorker(opts.log, opts.client, opts.url, opts.cfg)
+		},
 	}
 }
 
@@ -214,23 +239,32 @@ func (p *servicePool) sync(ctx context.Context, groups []*targetgroup.Group) {
 // workers for services that go away between calls will be removed, while new
 // workers will be created for new services.
 func (p *servicePool) schedule(ctx context.Context, svcs []*Service) {
-	uniqueWorkers := make(map[uint64]*httpWorker)
+	uniqueWorkers := make(map[uint64]*pooledWorker)
 
 	for _, svc := range svcs {
 		hash := svc.hash()
 
 		if _, ok := p.activeWorkers[hash]; !ok {
 			// This is a new service, we need to spin up a worker for it.
-			w := newWorker(
-				context.Background(),
-				p.log,
-				p.cli,
-				p.cfg,
-				svc,
-			)
+			w := p.newWorker(workerOptions{
+				log:    p.log,
+				client: p.cli,
+				cfg:    p.cfg,
+				url:    svc.URL().String(),
+			})
 
-			p.activeWorkers[hash] = w
-			uniqueWorkers[hash] = w
+			ctx, cancel := context.WithCancel(ctx)
+			pw := &pooledWorker{
+				worker: w,
+				svc:    svc,
+
+				ctx:    ctx,
+				cancel: cancel,
+				done:   make(chan struct{}),
+			}
+
+			p.activeWorkers[hash] = pw
+			uniqueWorkers[hash] = pw
 		} else {
 			if _, ok := uniqueWorkers[hash]; !ok {
 				// This is an existing or duplicated worker.
@@ -244,13 +278,15 @@ func (p *servicePool) schedule(ctx context.Context, svcs []*Service) {
 
 	var stoppedWorkers sync.WaitGroup
 
-	for hash, w := range p.activeWorkers {
+	for hash, pw := range p.activeWorkers {
 		if _, ok := uniqueWorkers[hash]; !ok {
 			stoppedWorkers.Add(1)
-			go func(w *httpWorker) {
+			go func(pw *pooledWorker) {
 				defer stoppedWorkers.Done()
-				w.Stop()
-			}(w)
+
+				pw.cancel()
+				<-pw.done
+			}(pw)
 			delete(p.activeWorkers, hash)
 		}
 	}
@@ -258,9 +294,22 @@ func (p *servicePool) schedule(ctx context.Context, svcs []*Service) {
 	// TODO(rfratto): code from Prometheus:
 	// targetScrapePoolTargetsAdded.WithLabelValues(sp.config.JobName).Set(float64(len(uniqueLoops)))
 
-	for _, w := range uniqueWorkers {
-		if w != nil {
-			go w.Run(p.triggerSend)
+	scheduleRefresh := func() {
+		// p.triggerSend will block if there's already a refresh scheduled.
+		// Refreshes do a full reload of all the targets so we don't need to
+		// schedule more than one at a time.
+		select {
+		case p.triggerSend <- struct{}{}:
+		default:
+		}
+	}
+
+	for _, pw := range uniqueWorkers {
+		if pw != nil {
+			go func(pw *pooledWorker) {
+				defer close(pw.done)
+				pw.worker.Run(pw.ctx, scheduleRefresh)
+			}(pw)
 		}
 	}
 
@@ -268,10 +317,7 @@ func (p *servicePool) schedule(ctx context.Context, svcs []*Service) {
 	stoppedWorkers.Wait()
 
 	// Immediately try to schedule a refresh to handle the changed workers.
-	select {
-	case p.triggerSend <- struct{}{}:
-	default:
-	}
+	scheduleRefresh()
 }
 
 // allTargets calculcates the combined set of targets across all workers.
@@ -282,9 +328,9 @@ func (p *servicePool) allTargets() []*targetgroup.Group {
 	defer p.mut.Unlock()
 
 	var res []*targetgroup.Group
-	for _, w := range p.activeWorkers {
+	for _, pw := range p.activeWorkers {
 		// TODO(rfratto): mutate source to be multihttp
-		res = append(res, w.Targets()...)
+		res = append(res, pw.worker.Targets()...)
 	}
 	return res
 }

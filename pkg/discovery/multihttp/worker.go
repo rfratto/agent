@@ -28,24 +28,20 @@ var (
 
 // worker collects targets in the background.
 type worker interface {
-	// Run starts the worker and returns once the worker is stopped. Run must not
-	// be called more than once.
+	// Run starts the worker and returns once ctx is canceled. Run must not be
+	// called more than once.
 	//
 	// refresh should be called whenever there is a new set of targets that can
 	// be retrieved.
-	Run(refresh func())
+	Run(ctx context.Context, refresh func())
 
 	// Targets returns the latest set of targets the worker collected.
 	Targets() []*targetgroup.Group
-
-	// Stop cancels the worker. Blocks until the worker exits.
-	Stop()
 }
 
 // httpWorker collects targets by invoking an HTTP endpoint.
 type httpWorker struct {
 	log log.Logger
-	svc *Service
 
 	client          *http.Client
 	url             string
@@ -55,27 +51,16 @@ type httpWorker struct {
 
 	mut            sync.RWMutex
 	currentTargets []*targetgroup.Group
-
-	ctx    context.Context
-	cancel context.CancelFunc
-	exited chan struct{}
 }
 
-// newWorker initializes a new worker. It should be started by calling Run.
-func newWorker(ctx context.Context, log log.Logger, client *http.Client, cfg *Config, svc *Service) *httpWorker {
-	ctx, cancel := context.WithCancel(ctx)
+// newHTTPWorker initializes a new worker. It should be started by calling Run.
+func newHTTPWorker(log log.Logger, client *http.Client, url string, cfg *Config) *httpWorker {
 	return &httpWorker{
-		log: log,
-		svc: svc,
-
+		log:             log,
 		client:          client,
-		url:             svc.URL().String(),
+		url:             url,
 		refreshInterval: time.Duration(cfg.RefreshInterval),
 		refreshTimeout:  time.Duration(cfg.RefreshTimeout),
-
-		ctx:    ctx,
-		cancel: cancel,
-		exited: make(chan struct{}),
 	}
 }
 
@@ -84,16 +69,14 @@ func newWorker(ctx context.Context, log log.Logger, client *http.Client, cfg *Co
 //
 // refresh will be written to when new targets are available. Call Targets to
 // retrieve them.
-func (w *httpWorker) Run(refresh chan<- struct{}) {
-	defer close(w.exited)
-
+func (w *httpWorker) Run(ctx context.Context, refresh func()) {
 	t := time.NewTicker(w.refreshInterval)
 	defer t.Stop()
 
 	for {
 		select {
 		case <-t.C:
-			res, err := w.refresh(w.ctx)
+			res, err := w.refresh(ctx)
 			if err != nil {
 				level.Error(w.log).Log("msg", "failed to refresh target", "err", err)
 				// TODO(rfratto): metric?
@@ -106,14 +89,8 @@ func (w *httpWorker) Run(refresh chan<- struct{}) {
 			w.currentTargets = res
 			w.mut.Unlock()
 
-			// Best-effort queue a refresh. The write will fail if a refresh is
-			// already queued, and we don't need to queue more than one.
-			select {
-			case refresh <- struct{}{}:
-			default:
-			}
-
-		case <-w.ctx.Done():
+			refresh()
+		case <-ctx.Done():
 			return
 		}
 	}
@@ -136,8 +113,6 @@ func (w *httpWorker) refresh(ctx context.Context) ([]*targetgroup.Group, error) 
 	}
 	req.Header.Set("User-Agent", userAgent)
 	req.Header.Set("Accept", "application/json")
-
-	fmt.Println(w.refreshInterval.Seconds())
 	req.Header.Set("X-Prometheus-Refresh-Interval-Seconds", strconv.FormatFloat(w.refreshInterval.Seconds(), 'f', -1, 64))
 
 	resp, err := w.client.Do(req.WithContext(ctx))
@@ -185,10 +160,4 @@ func (w *httpWorker) refresh(ctx context.Context) ([]*targetgroup.Group, error) 
 // urlSource returns a source ID for the i-th target group per URL.
 func urlSource(url string, i int) string {
 	return fmt.Sprintf("%s:%d", url, i)
-}
-
-// Stop the worker, waiting until it finishes.
-func (w *httpWorker) Stop() {
-	w.cancel()
-	<-w.exited
 }
