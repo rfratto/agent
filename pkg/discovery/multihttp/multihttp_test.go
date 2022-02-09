@@ -2,6 +2,7 @@ package multihttp
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"testing"
 	"time"
@@ -14,12 +15,19 @@ import (
 	"go.uber.org/atomic"
 )
 
+// TestDiscovery performs an integration test of Discovery. Two http_sd APIs
+// are launched and aggregated using static_configs. We wait for a write to
+// services which contains the combined set of targets.
+func TestDiscovery(t *testing.T) {
+	// TODO(rfratto): write
+}
+
 func Test_servicePool_schedule(t *testing.T) {
 	running := atomic.NewUint64(0)
 
 	sp := newServicePool(util.TestLogger(t), &DefaultConfig, http.DefaultClient)
 	sp.newWorker = func(opts workerOptions) worker {
-		return &fakeWorker{
+		return &notifyWorker{
 			onRunStart:  func() { running.Inc() },
 			onRunFinish: func() { running.Dec() },
 		}
@@ -46,18 +54,48 @@ func Test_servicePool_schedule(t *testing.T) {
 	checkWorkers(t, 1, running, "expected a worker to be removed")
 }
 
-type fakeWorker struct {
+func Test_servicePool_allTargets(t *testing.T) {
+	var workerCount atomic.Uint64
+
+	sp := newServicePool(util.TestLogger(t), &DefaultConfig, http.DefaultClient)
+	sp.newWorker = func(opts workerOptions) worker {
+		num := workerCount.Inc()
+		return &fakeWorker{
+			targets: []*targetgroup.Group{
+				groupWithSource(&sampleGroup, fmt.Sprintf("worker-%d", num)),
+			},
+		}
+	}
+
+	// Apply new workers
+	sp.schedule(context.Background(), []*Service{
+		NewService(labels.FromStrings(model.AddressLabel, "service-a"), nil, nil),
+		NewService(labels.FromStrings(model.AddressLabel, "service-b"), nil, nil),
+	})
+
+	// Check that all targets combines our targets from both workers
+	expect := []*targetgroup.Group{
+		// We expect the source to be overwritten to "multihttp" here. This is
+		// required to have Prometheus treat the set of targets here as the
+		// definitive target set from SD.
+		groupWithSource(&sampleGroup, "multihttp"),
+		groupWithSource(&sampleGroup, "multihttp"),
+	}
+	require.Equal(t, expect, sp.allTargets())
+}
+
+type notifyWorker struct {
 	onRunStart  func()
 	onRunFinish func()
 }
 
-func (fw *fakeWorker) Run(ctx context.Context, refresh func()) {
-	fw.onRunStart()
-	defer fw.onRunFinish()
+func (nw *notifyWorker) Run(ctx context.Context, refresh func()) {
+	nw.onRunStart()
+	defer nw.onRunFinish()
 	<-ctx.Done()
 }
 
-func (fw *fakeWorker) Targets() []*targetgroup.Group { return nil }
+func (nw *notifyWorker) Targets() []*targetgroup.Group { return nil }
 
 func checkWorkers(t *testing.T, expect uint64, actual *atomic.Uint64, msgAndArgs ...interface{}) {
 	t.Helper()
@@ -68,3 +106,8 @@ func checkWorkers(t *testing.T, expect uint64, actual *atomic.Uint64, msgAndArgs
 		msgAndArgs...,
 	)
 }
+
+type fakeWorker struct{ targets []*targetgroup.Group }
+
+func (fw *fakeWorker) Run(ctx context.Context, refresh func()) { <-ctx.Done() }
+func (fw *fakeWorker) Targets() []*targetgroup.Group           { return fw.targets }

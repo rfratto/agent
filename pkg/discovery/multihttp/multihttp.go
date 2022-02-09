@@ -324,8 +324,13 @@ func (p *servicePool) allTargets() []*targetgroup.Group {
 
 	var res []*targetgroup.Group
 	for _, pw := range p.activeWorkers {
-		// TODO(rfratto): mutate source to be multihttp
-		res = append(res, pw.worker.Targets()...)
+		for _, tgts := range pw.worker.Targets() {
+			res = append(res, &targetgroup.Group{
+				Targets: tgts.Targets,
+				Labels:  tgts.Labels,
+				Source:  "multihttp",
+			})
+		}
 	}
 	return res
 }
