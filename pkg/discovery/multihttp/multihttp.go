@@ -102,8 +102,8 @@ type servicePool struct {
 	cfg *Config
 	cli *http.Client
 
-	targets     chan []*targetgroup.Group
-	triggerSend chan struct{} // Schedules the full set of targets to be recalculated across all the workers.
+	targets chan []*targetgroup.Group
+	refresh chan struct{} // Schedules the full set of targets to be recalculated across all the workers.
 
 	// TODO(rfratto): expose allServices, droppedServices via API
 
@@ -138,8 +138,8 @@ func newServicePool(l log.Logger, cfg *Config, cli *http.Client) *servicePool {
 		cfg: cfg,
 		cli: cli,
 
-		targets:     make(chan []*targetgroup.Group),
-		triggerSend: make(chan struct{}, 1),
+		targets: make(chan []*targetgroup.Group),
+		refresh: make(chan struct{}, 1),
 
 		activeWorkers: make(map[uint64]*pooledWorker),
 
@@ -177,19 +177,15 @@ func (p *servicePool) Run(ctx context.Context, services <-chan []*targetgroup.Gr
 
 		case <-checkUpdate.C: // Throttle checking for updates
 			select {
-			case <-p.triggerSend:
+			case <-p.refresh:
 				// TODO(rfratto): counter for # updates
 				select {
 				case p.targets <- p.allTargets():
 					continue
 				default:
-				}
-
-				level.Debug(p.log).Log("msg", "targets reader blocked, will try again later")
-				select {
-				case p.triggerSend <- struct{}{}:
-				default:
-					// trigger already scheduled
+					// Queue a new refresh if we failed to send the targets now.
+					level.Debug(p.log).Log("msg", "targets reader blocked, will try again later")
+					p.tryQueueRefresh()
 				}
 			default:
 				// No update triggered, wait for the next tick
@@ -199,6 +195,15 @@ func (p *servicePool) Run(ctx context.Context, services <-chan []*targetgroup.Gr
 		case <-ctx.Done():
 			return
 		}
+	}
+}
+
+// tryQueueRefresh will queue a refresh if one isn't already queued.
+func (p *servicePool) tryQueueRefresh() {
+	select {
+	case p.refresh <- struct{}{}:
+	default:
+		// trigger already scheduled
 	}
 }
 
@@ -294,21 +299,11 @@ func (p *servicePool) schedule(ctx context.Context, svcs []*Service) {
 	// TODO(rfratto): code from Prometheus:
 	// targetScrapePoolTargetsAdded.WithLabelValues(sp.config.JobName).Set(float64(len(uniqueLoops)))
 
-	scheduleRefresh := func() {
-		// p.triggerSend will block if there's already a refresh scheduled.
-		// Refreshes do a full reload of all the targets so we don't need to
-		// schedule more than one at a time.
-		select {
-		case p.triggerSend <- struct{}{}:
-		default:
-		}
-	}
-
 	for _, pw := range uniqueWorkers {
 		if pw != nil {
 			go func(pw *pooledWorker) {
 				defer close(pw.done)
-				pw.worker.Run(pw.ctx, scheduleRefresh)
+				pw.worker.Run(pw.ctx, p.tryQueueRefresh)
 			}(pw)
 		}
 	}
@@ -317,7 +312,7 @@ func (p *servicePool) schedule(ctx context.Context, svcs []*Service) {
 	stoppedWorkers.Wait()
 
 	// Immediately try to schedule a refresh to handle the changed workers.
-	scheduleRefresh()
+	p.tryQueueRefresh()
 }
 
 // allTargets calculcates the combined set of targets across all workers.
