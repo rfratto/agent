@@ -138,13 +138,7 @@ func (w *httpWorker) refresh(ctx context.Context) ([]*targetgroup.Group, error) 
 		if group == nil {
 			return nil, fmt.Errorf("null target group item found")
 		}
-
-		group.Source = urlSource(w.url, i)
-		if group.Labels == nil {
-			group.Labels = model.LabelSet{}
-		}
-		// TODO(rfratto): should any labels be injected here? Prometheus http_sd
-		// injects __meta_url.
+		targetGroups[i] = groupWithSource(group, urlSource(w.url, i))
 	}
 
 	// Generate empty updates for sources that disappeared.
@@ -160,4 +154,19 @@ func (w *httpWorker) refresh(ctx context.Context) ([]*targetgroup.Group, error) 
 // urlSource returns a source ID for the i-th target group per URL.
 func urlSource(url string, i int) string {
 	return fmt.Sprintf("%s:%d", url, i)
+}
+
+func groupWithSource(grp *targetgroup.Group, source string) *targetgroup.Group {
+	res := &targetgroup.Group{
+		Targets: grp.Targets,
+		Labels:  grp.Labels,
+		Source:  source,
+	}
+	if res.Labels == nil {
+		res.Labels = model.LabelSet{}
+	}
+
+	// TODO(rfratto): should any labels be injected here? Prometheus http_sd
+	// injects __meta_url.
+	return res
 }
