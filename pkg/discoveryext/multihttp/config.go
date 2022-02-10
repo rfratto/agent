@@ -54,7 +54,7 @@ func (c *Config) NewDiscoverer(o discovery.DiscovererOptions) (discovery.Discove
 
 // UnmarshalYAML implements the yaml.Unmarshaler interface and validates the
 // unmarshaled config.
-func (c *Config) UmmarshalYAML(unmarshal func(interface{}) error) error {
+func (c *Config) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	*c = DefaultConfig
 
 	if err := discovery.UnmarshalYAMLWithInlineConfigs(c, unmarshal); err != nil {

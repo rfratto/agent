@@ -1,0 +1,16 @@
+# multihttp.yaml is an example config file for the `agentctl multihttpsd`
+# command. It uses static_configs and forwards exposed integrations from an
+# agent running at localhost:12345.
+
+# API path where targets are exposed from discovered services. Can be
+# overwritten here or by using relabel rules to set the __api_path__ label.
+api_path: /agent/api/v1/metrics/integrations/sd
+
+# Service discovery configs to find services hosting http_sd APIs. Any
+# Prometheus SD can be used here, but we used static_configs for the more basic
+# example.
+static_configs:
+  - targets: ['127.0.0.1:12345']
+    labels:
+      # Extra labels to append to all discovered targets
+      agent: primary

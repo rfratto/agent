@@ -205,6 +205,19 @@ func servicesFromGroup(group *targetgroup.Group, cfg *Config) ([]*Service, error
 // populateLabels builds a label set based on the multihttp config. The final
 // set of labels will be nil if the target was dropped during relabeling.
 func populateLabels(lset labels.Labels, cfg *Config) (final, orig labels.Labels, err error) {
+	// NOTE(rfratto): Prometheus does things very differently here, since the
+	// intent is to generate targets that will be scraped. However, we're
+	// generating services to collect targets from, so we want to generate different labels:
+	//
+	// __api_path__    API path where targets are exposed
+	// __scheme__      URL scheme to use for collecting targets
+	// __address__     host:port where targets are exposed
+	// __param_<name>  URL query parameter
+	//
+	// This function does _not_ explicitly generate any label not prefixed with __.
+	// Labels not prefixed with __ from relabeling will be copied to the final
+	// discovered targets.
+
 	defaultLabels := []labels.Label{
 		{Name: APIPathLabel, Value: cfg.APIPath},
 		{Name: model.SchemeLabel, Value: cfg.Scheme},
@@ -259,11 +272,6 @@ func populateLabels(lset labels.Labels, cfg *Config) (final, orig labels.Labels,
 		if strings.HasPrefix(l.Name, model.MetaLabelPrefix) {
 			lb.Del(l.Name)
 		}
-	}
-
-	// Default the instance label to the target address.
-	if !lset.Has(model.InstanceLabel) {
-		lb.Set(model.InstanceLabel, addr)
 	}
 
 	final = lb.Labels()

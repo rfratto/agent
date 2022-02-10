@@ -60,6 +60,7 @@ func main() {
 		samplesCmd(),
 		operatorDetachCmd(),
 		cloudConfigCmd(),
+		multiHTTPSDCmd(),
 	)
 
 	_ = cmd.Execute()

@@ -316,21 +316,25 @@ func (p *servicePool) schedule(ctx context.Context, svcs []*Service) {
 }
 
 // allTargets calculcates the combined set of targets across all workers.
+// Worker tarets are flattened out into a single target group.
 func (p *servicePool) allTargets() []*targetgroup.Group {
 	// TODO(rfratto): dedupe?
+
+	// TODO(rfratto): merge with labels from worker
 
 	p.mut.Lock()
 	defer p.mut.Unlock()
 
-	var res []*targetgroup.Group
+	final := &targetgroup.Group{Source: "multihttp"}
+
 	for _, pw := range p.activeWorkers {
 		for _, tgts := range pw.worker.Targets() {
-			res = append(res, &targetgroup.Group{
-				Targets: tgts.Targets,
-				Labels:  tgts.Labels,
-				Source:  "multihttp",
-			})
+			for _, tgt := range tgts.Targets {
+				// Labels from the target take precedence over labels from the group.
+				final.Targets = append(final.Targets, tgts.Labels.Merge(tgt))
+			}
 		}
 	}
-	return res
+
+	return []*targetgroup.Group{final}
 }

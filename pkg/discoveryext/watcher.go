@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"sync"
 
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
@@ -93,14 +94,31 @@ func (c *Watcher) Close() error {
 // ServeHTTP implements http.Handler. The current cached target groups will be
 // written in the http_sd API format.
 func (c *Watcher) ServeHTTP(rw http.ResponseWriter, r *http.Request) {
-	// We need to create a new slice until a Prometheus release with
-	// prometheus/prometheus#10229 is used.
+	// ServeHTTP writes in the http_sd API format, which forces us to convert the
+	// raw targets into a compatible representation.
+	//
+	// Targets from a group only propagate their address label, so we split each
+	// target into its own group and give each group all the non-address labels
+	// from the target.
 	var (
 		ents    = c.Entries()
-		apiEnts = make([]*TargetGroup, len(ents))
+		apiEnts = make([]*TargetGroup, 0, len(ents))
 	)
-	for i, ent := range ents {
-		apiEnts[i] = (*TargetGroup)(ent)
+
+	// TODO(rfratto): hash the resulting labels and use to dedupe groups that are
+	// the same except for the address.
+	for _, group := range ents {
+		for _, target := range group.Targets {
+			newGroup := &TargetGroup{
+				Targets: []model.LabelSet{{model.AddressLabel: target[model.AddressLabel]}},
+				Labels:  group.Labels.Merge(target),
+			}
+			// We did a full merge, so we need to delete the one label we don't want
+			// to copy over.
+			delete(newGroup.Labels, model.AddressLabel)
+
+			apiEnts = append(apiEnts, newGroup)
+		}
 	}
 
 	rw.Header().Add("Content-Type", "application/json")

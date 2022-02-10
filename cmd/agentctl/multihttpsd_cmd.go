@@ -44,7 +44,7 @@ func multiHTTPSDCmd() *cobra.Command {
 			}
 
 			disc, err := cfg.NewDiscoverer(discovery.DiscovererOptions{
-				Logger: log.NewNopLogger(),
+				Logger: log.NewLogfmtLogger(log.NewSyncWriter(os.Stderr)),
 			})
 			if err != nil {
 				return fmt.Errorf("failed to create multihttp discovery: %w", err)
