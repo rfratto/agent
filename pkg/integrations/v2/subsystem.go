@@ -10,6 +10,7 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/gorilla/mux"
+	"github.com/grafana/agent/pkg/discoveryext"
 	"github.com/grafana/agent/pkg/integrations/v2/autoscrape"
 	"github.com/grafana/agent/pkg/metrics"
 	common_config "github.com/prometheus/common/config"
@@ -217,7 +218,7 @@ func (s *Subsystem) WireAPI(r *mux.Router) {
 		// into multiple groups.
 		//
 		// TODO(rfratto): optimize to remove redundant groups
-		finalTgs := []*targetGroup{}
+		finalTgs := []*discoveryext.TargetGroup{}
 		for _, group := range tgs {
 			for _, target := range group.Targets {
 				// Create the final labels for the group. This will be everything from
@@ -226,7 +227,7 @@ func (s *Subsystem) WireAPI(r *mux.Router) {
 				groupLabels := group.Labels.Merge(target)
 				delete(groupLabels, model.AddressLabel)
 
-				finalTgs = append(finalTgs, &targetGroup{
+				finalTgs = append(finalTgs, &discoveryext.TargetGroup{
 					Targets: []model.LabelSet{{model.AddressLabel: target[model.AddressLabel]}},
 					Labels:  groupLabels,
 				})

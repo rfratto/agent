@@ -15,13 +15,6 @@ import (
 	"go.uber.org/atomic"
 )
 
-// TestDiscovery performs an integration test of Discovery. Two http_sd APIs
-// are launched and aggregated using static_configs. We wait for a write to
-// services which contains the combined set of targets.
-func TestDiscovery(t *testing.T) {
-	// TODO(rfratto): write
-}
-
 func Test_servicePool_schedule(t *testing.T) {
 	running := atomic.NewUint64(0)
 
@@ -58,7 +51,7 @@ func Test_servicePool_allTargets(t *testing.T) {
 	var workerCount atomic.Uint64
 
 	sp := newServicePool(util.TestLogger(t), &DefaultConfig, http.DefaultClient)
-	sp.newWorker = func(opts workerOptions) worker {
+	sp.newWorker = func(_ workerOptions) worker {
 		num := workerCount.Inc()
 		return &fakeWorker{
 			targets: []*targetgroup.Group{

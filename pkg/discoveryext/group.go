@@ -1,4 +1,4 @@
-package integrations
+package discoveryext
 
 import (
 	"encoding/json"
@@ -7,13 +7,11 @@ import (
 	"github.com/prometheus/prometheus/discovery/targetgroup"
 )
 
-// targetGroup implements json.Marshaler for targetgroup.Group. This is
-// required do to an issue with Prometheus: HTTP SD expects to be unmarshaled
-// as JSON, but the form it expects to unmarshal the target groups in is not the form
-// it marshals out to JSON as.
-type targetGroup targetgroup.Group
+// TargetGroup implements json.Marshaler for targetgroup.Group, marshaling it
+// in the expected http_sd format.
+type TargetGroup targetgroup.Group
 
-func (tg *targetGroup) MarshalJSON() ([]byte, error) {
+func (tg *TargetGroup) MarshalJSON() ([]byte, error) {
 	g := &struct {
 		Targets []string       `json:"targets"`
 		Labels  model.LabelSet `json:"labels,omitempty"`

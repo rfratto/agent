@@ -14,6 +14,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/gorilla/mux"
+	"github.com/grafana/agent/pkg/discoveryext"
 	"github.com/grafana/agent/pkg/integrations/v2/autoscrape"
 	"github.com/prometheus/prometheus/discovery"
 	http_sd "github.com/prometheus/prometheus/discovery/http"
@@ -268,7 +269,7 @@ func (c *controller) forEachIntegration(basePrefix string, f func(ci *controlled
 
 // Targets returns the current set of targets across all integrations. Use opts
 // to customize which targets are returned.
-func (c *controller) Targets(ep Endpoint, opts TargetOptions) []*targetGroup {
+func (c *controller) Targets(ep Endpoint, opts TargetOptions) []*discoveryext.TargetGroup {
 	// Grab the integrations as fast as possible. We don't want to spend too much
 	// time holding the mutex.
 	type prefixedMetricsIntegration struct {
@@ -294,7 +295,7 @@ func (c *controller) Targets(ep Endpoint, opts TargetOptions) []*targetGroup {
 		level.Warn(c.logger).Log("msg", "error when iterating over integrations to get targets", "err", err)
 	}
 
-	var tgs []*targetGroup
+	var tgs []*discoveryext.TargetGroup
 	for _, mi := range mm {
 		// If we're looking for a subset of integrations, filter out anything that doesn't match.
 		if len(opts.Integrations) > 0 && !stringSliceContains(opts.Integrations, mi.id.Name) {
@@ -306,7 +307,7 @@ func (c *controller) Targets(ep Endpoint, opts TargetOptions) []*targetGroup {
 		}
 
 		for _, tgt := range mi.i.Targets(mi.ep) {
-			tgs = append(tgs, (*targetGroup)(tgt))
+			tgs = append(tgs, (*discoveryext.TargetGroup)(tgt))
 		}
 	}
 	sort.Slice(tgs, func(i, j int) bool {

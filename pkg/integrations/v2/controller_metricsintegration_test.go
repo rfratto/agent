@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/go-kit/log"
+	"github.com/grafana/agent/pkg/discoveryext"
 	"github.com/grafana/agent/pkg/integrations/v2/autoscrape"
 	"github.com/grafana/agent/pkg/util"
 	"github.com/prometheus/common/model"
@@ -63,7 +64,7 @@ func Test_controller_MetricsIntegration_Targets(t *testing.T) {
 		waitIntegrations(t, ctrl)
 
 		result := ctrl.Targets(Endpoint{Prefix: "/"}, TargetOptions{})
-		expect := []*targetGroup{
+		expect := []*discoveryext.TargetGroup{
 			{Targets: []model.LabelSet{{model.AddressLabel: "a"}}},
 			{Targets: []model.LabelSet{{model.AddressLabel: "b"}}},
 		}
@@ -82,7 +83,7 @@ func Test_controller_MetricsIntegration_Targets(t *testing.T) {
 		result := ctrl.Targets(Endpoint{Prefix: "/"}, TargetOptions{
 			Integrations: []string{"a", "b"},
 		})
-		expect := []*targetGroup{
+		expect := []*discoveryext.TargetGroup{
 			{Targets: []model.LabelSet{{model.AddressLabel: "a"}}},
 			{Targets: []model.LabelSet{{model.AddressLabel: "b"}}},
 		}
@@ -101,7 +102,7 @@ func Test_controller_MetricsIntegration_Targets(t *testing.T) {
 		result := ctrl.Targets(Endpoint{Prefix: "/"}, TargetOptions{
 			Integrations: []string{"a"},
 		})
-		expect := []*targetGroup{
+		expect := []*discoveryext.TargetGroup{
 			{Targets: []model.LabelSet{{model.AddressLabel: "a"}}},
 		}
 		require.Equal(t, expect, result)
