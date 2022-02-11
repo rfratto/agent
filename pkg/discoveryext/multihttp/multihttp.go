@@ -10,14 +10,18 @@ package multihttp
 import (
 	"context"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/common/config"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/discovery"
 	"github.com/prometheus/prometheus/discovery/targetgroup"
+	"github.com/prometheus/prometheus/pkg/labels"
+	"github.com/prometheus/prometheus/pkg/relabel"
 )
 
 // Discovery implements multihttp discovery.
@@ -318,23 +322,109 @@ func (p *servicePool) schedule(ctx context.Context, svcs []*Service) {
 // allTargets calculcates the combined set of targets across all workers.
 // Worker tarets are flattened out into a single target group.
 func (p *servicePool) allTargets() []*targetgroup.Group {
-	// TODO(rfratto): dedupe?
-
-	// TODO(rfratto): merge with labels from worker
-
+	// TODO(rfratto): dedupe targets?
 	p.mut.Lock()
 	defer p.mut.Unlock()
 
 	final := &targetgroup.Group{Source: "multihttp"}
 
-	for _, pw := range p.activeWorkers {
-		for _, tgts := range pw.worker.Targets() {
-			for _, tgt := range tgts.Targets {
-				// Labels from the target take precedence over labels from the group.
-				final.Targets = append(final.Targets, tgts.Labels.Merge(tgt))
+	for _, worker := range p.activeWorkers {
+		for _, group := range worker.worker.Targets() {
+			for _, target := range group.Targets {
+				// Create our final base set of target labels. Labels are copied from
+				// the target and the group, where target labels take precedence over
+				// group labels of the same name.
+				targetLabels := make(labels.Labels, 0, len(target)+len(group.Labels))
+
+				for lName, lValue := range target {
+					targetLabels = append(targetLabels, labels.Label{
+						Name:  string(lName),
+						Value: string(lValue),
+					})
+				}
+				for lName, lValue := range group.Labels {
+					if _, exist := target[lName]; exist {
+						continue
+					}
+					targetLabels = append(targetLabels, labels.Label{
+						Name:  string(lName),
+						Value: string(lValue),
+					})
+				}
+
+				// Transform our target based on relabel rules and the public labels of
+				// the service.
+				targetLabels = mutateServiceTargetLabels(targetLabels, worker.svc, p.cfg.HonorLabels, p.cfg.TargetRelabelConfigs)
+
+				if len(targetLabels) == 0 {
+					// The target was dropped during relabeling.
+					continue
+				}
+
+				targetLabelSet := make(model.LabelSet, len(targetLabels))
+				for _, pair := range targetLabels {
+					targetLabelSet[model.LabelName(pair.Name)] = model.LabelValue(pair.Value)
+				}
+				final.Targets = append(final.Targets, targetLabelSet)
 			}
 		}
 	}
 
 	return []*targetgroup.Group{final}
+}
+
+func mutateServiceTargetLabels(lset labels.Labels, svc *Service, honor bool, rc []*relabel.Config) labels.Labels {
+	lb := labels.NewBuilder(lset)
+	targetLabels := svc.Labels()
+
+	if honor {
+		for _, l := range targetLabels {
+			if !lset.Has(l.Name) {
+				lb.Set(l.Name, l.Value)
+			}
+		}
+	} else {
+		var conflictingExposedLabels labels.Labels
+		for _, l := range targetLabels {
+			existingValue := lset.Get(l.Name)
+			if existingValue != "" {
+				conflictingExposedLabels = append(conflictingExposedLabels, labels.Label{Name: l.Name, Value: existingValue})
+			}
+			// It is now safe to set the target label.
+			lb.Set(l.Name, l.Value)
+		}
+
+		if len(conflictingExposedLabels) > 0 {
+			resolveConflictingExposedLabels(lb, lset, targetLabels, conflictingExposedLabels)
+		}
+	}
+
+	res := lb.Labels()
+	if len(rc) > 0 {
+		res = relabel.Process(res, rc...)
+	}
+	return res
+}
+
+func resolveConflictingExposedLabels(lb *labels.Builder, exposedLabels, targetLabels, conflictingExposedLabels labels.Labels) {
+	sort.SliceStable(conflictingExposedLabels, func(i, j int) bool {
+		return len(conflictingExposedLabels[i].Name) < len(conflictingExposedLabels[j].Name)
+	})
+
+	for i, l := range conflictingExposedLabels {
+		newName := l.Name
+		for {
+			newName = model.ExportedLabelPrefix + newName
+			if !exposedLabels.Has(newName) &&
+				!targetLabels.Has(newName) &&
+				!conflictingExposedLabels[:i].Has(newName) {
+				conflictingExposedLabels[i].Name = newName
+				break
+			}
+		}
+	}
+
+	for _, l := range conflictingExposedLabels {
+		lb.Set(l.Name, l.Value)
+	}
 }
