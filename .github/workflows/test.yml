@@ -5,7 +5,7 @@ jobs:
     name: Test
     strategy:
       matrix:
-        platform: [macos-latest, windows-latest]
+        platform: [windows-latest]
     runs-on: ${{ matrix.platform }}
     steps:
     - name: Set up Go 1.17
@@ -15,7 +15,25 @@ jobs:
       id: go
     - name: Checkout code
       uses: actions/checkout@v2
+    - name: Report memory
+      shell: powershell
+      run: |
+        wmic cpu get loadpercentage /format:value
+        wmic os get freephysicalmemory /format:value
+        wmic os get freevirtualmemory /format:value
     - name: Build
       run: make GOFLAGS="-tags=netgo,nodocker" BUILD_IN_CONTAINER=false cmd/agent/agent cmd/agentctl/agentctl cmd/agent-operator/agent-operator
+    - name: Report memory
+      shell: powershell
+      run: |
+        wmic cpu get loadpercentage /format:value
+        wmic os get freephysicalmemory /format:value
+        wmic os get freevirtualmemory /format:value
     - name: Test
       run: make GOFLAGS="-tags=netgo,nodocker" BUILD_IN_CONTAINER=false test
+    - name: Report memory
+      shell: powershell
+      run: |
+        wmic cpu get loadpercentage /format:value
+        wmic os get freephysicalmemory /format:value
+        wmic os get freevirtualmemory /format:value
