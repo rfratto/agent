@@ -70,7 +70,7 @@ require (
 	github.com/prometheus/statsd_exporter v0.22.2
 	github.com/rancher/k3d/v5 v5.2.2
 	github.com/sirupsen/logrus v1.8.1
-	github.com/spf13/cobra v1.2.1
+	github.com/spf13/cobra v1.4.0
 	github.com/stretchr/testify v1.7.0
 	github.com/uber/jaeger-client-go v2.29.1+incompatible
 	github.com/weaveworks/common v0.0.0-20211222122857-933588f98737
@@ -200,7 +200,6 @@ require (
 	github.com/go-zookeeper/zk v1.0.2 // indirect
 	github.com/godbus/dbus v0.0.0-20190422162347-ade71ed3457e // indirect
 	github.com/godbus/dbus/v5 v5.0.4 // indirect
-	github.com/gofrs/uuid v4.0.0+incompatible // indirect
 	github.com/gogo/googleapis v1.4.1 // indirect
 	github.com/gogo/status v1.1.0 // indirect
 	github.com/golang-jwt/jwt/v4 v4.1.0 // indirect
