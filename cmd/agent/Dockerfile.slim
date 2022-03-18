@@ -1,0 +1,21 @@
+FROM golang:1.17-bullseye AS builder
+
+COPY build/*-linux-* /build/
+RUN sh -c '\
+  export PLATFORM=$(go env GOOS)-$(go env GOARCH)$(go env GOARM) \
+  && cp /build/grafana-agent-$PLATFORM /go/bin/grafana-agent \
+  '
+
+FROM debian:buster-slim
+
+# Backports repo required to get a libsystemd version 246 or newer which is required to handle journal +ZSTD compression
+RUN echo "deb http://deb.debian.org/debian buster-backports main" >> /etc/apt/sources.list
+RUN apt-get update && apt-get install -t buster-backports -qy libsystemd-dev && \
+  apt-get install -qy tzdata ca-certificates libsystemd-dev && \
+  rm -rf /var/lib/apt/lists/* /tmp/* /var/tmp/*
+
+COPY --from=builder /go/bin/grafana-agent /bin/grafana-agent
+COPY cmd/agent/agent-local-config.yaml /etc/agent/agent.yaml
+
+ENTRYPOINT ["/bin/grafana-agent"]
+CMD ["--config.file=/etc/agent/agent.yaml", "--metrics.wal-directory=/etc/agent/data"]

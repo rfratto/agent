@@ -12,6 +12,7 @@ vendor
 /cmd/agent-operator/agent-operator
 /cmd/grafana-agent-crow/grafana-agent-crow
 /dist/
+/build/
 /packaging/windows/LICENSE
 /packaging/windows/agent-windows-amd64.exe
 

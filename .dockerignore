@@ -1,0 +1,6 @@
+# Ignore everything except the dist folder
+.git
+.cache
+.pkg
+build/.cache
+build/.pkg
