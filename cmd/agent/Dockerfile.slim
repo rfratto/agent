@@ -2,7 +2,8 @@ FROM golang:1.17-bullseye AS builder
 
 COPY build/*-linux-* /build/
 RUN sh -c '\
-  export PLATFORM=$(go env GOOS)-$(go env GOARCH)$(go env GOARM) \
+  ARM_SUFFIX=$([ ! -z "$(go env GOARM)" ] && echo "v$(go env GOARM)") \
+  && export PLATFORM=$(go env GOOS)-$(go env GOARCH)${ARM_SUFFIX} \
   && cp /build/grafana-agent-$PLATFORM /go/bin/grafana-agent \
   '
 

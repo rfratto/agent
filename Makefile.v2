@@ -1,8 +1,8 @@
 ## Build, test, and generate code for various parts of Grafana Agent.
 ##
 ## If you do not have all build dependencies (e.g., go), you can set
-## the CONTAINER environment variable to a non-empty string. This will
-## cause targets to be built inside of a build container which has all
+## the CONTAINER environment variable to 1. This will cause targets to be
+## built inside of a build container which has all
 ## dependencies pre-installed. For example: `CONTAINER=1 make agent`
 ##
 ## Other environment variables can be used to tweak behaviors of targets.
@@ -60,28 +60,55 @@
 ##   CROW_IMAGE       Image tag used by crow-image
 ##   SMOKE_IMAGE      Image tag used by smoke-image
 ##   BUILD_IMAGE      Image tag used for the build container
-##   CONTAINER        Set to a non-empty string to enable the build container
+##   USE_CONTAINER    Set to 1 to enable the build container
 ##   GOOS             Target OS to build binaries for
 ##   GOARCH           Target architecture to build binaries for
 ##   GOARM            ARM version (6 or 7) to use when GOARCH=arm
 ##   CGO_ENABLED      Set to 0 to disable Cgo for builds
-##   RELEASE_BUILD    Set to a non-empty string to build release binaries
+##   RELEASE_BUILD    Set to 1 to build release binaries
 ##
 ## Note that building Docker images may override provided values for GOOS,
 ## GOARCH, and GOARM.
 
-AGENT_IMAGE    ?= grafana/agent
-AGENTCTL_IMAGE ?= grafana/agentctl
-OPERATOR_IMAGE ?= grafana/agent-operator
-CROW_IMAGE     ?= us.gcr.io/kubernetes-dev/grafana/agent-crow
-SMOKE_IMAGE    ?= us.gcr.io/kubernetes-dev/grafana/agent-smoke
+AGENT_IMAGE    ?= grafana/agent:latest
+AGENTCTL_IMAGE ?= grafana/agentctl:latest
+OPERATOR_IMAGE ?= grafana/agent-operator:latest
+CROW_IMAGE     ?= us.gcr.io/kubernetes-dev/grafana/agent-crow:latest
+SMOKE_IMAGE    ?= us.gcr.io/kubernetes-dev/grafana/agent-smoke:latest
 BUILD_IMAGE    ?= grafana/agent-build-image:0.14.0
-CONTAINER      ?=
+USE_CONTAINER  ?= 0
 GOOS           ?= $(shell go env GOOS)
 GOARCH         ?= $(shell go env GOARCH)
 GOARM          ?= $(shell go env GOARM)
 CGO_ENABLED    ?= 1
-RELEASE_BUILD  ?=
+RELEASE_BUILD  ?= 0
+
+#
+# Constants to use inside of targets
+#
+
+GO_ENV        := GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) CGO_ENABLED=$(CGO_ENABLED)
+BINARY_SUFFIX := $(GOOS)-$(GOARCH)$(if $(GOARM),v$(GOARM),)
+ifeq ($(GOOS),windows)
+BINARY_SUFFIX := $(BINARY_SUFFIX).exe
+endif
+
+GIT_REVISION     := $(shell git rev-parse --short HEAD)
+GIT_BRANCH       := $(shell git rev-parse --abbrev-ref HEAD)
+VPREFIX          := github.com/grafana/agent/pkg/build
+GO_LDFLAGS       := -X $(VPREFIX).Branch=$(GIT_BRANCH) \
+										-X $(VPREFIX).Version=$(IMAGE_TAG) \
+										-X $(VPREFIX).Revision=$(GIT_REVISION) \
+										-X $(VPREFIX).BuildUser=$(shell whoami)@$(shell hostname) \
+										-X $(VPREFIX).BuildDate=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+RELEASE_GO_FLAGS := -ldflags "-s -w $(GO_LDFLAGS)" -tags "netgo"
+DEBUG_GO_FLAGS   := -gcflags "all=-N -l" -ldflags "$(GO_LDFLAGS)" -tags "netgo"
+
+ifeq ($(RELEASE_BUILD),1)
+GO_FLAGS := $(DEBUG_GO_FLAGS)
+else
+GO_FLAGS := $(RELEASE_GO_FLAGS)
+endif
 
 #
 # Asset generation targets
@@ -91,25 +118,25 @@ RELEASE_BUILD  ?=
 generate: generate-crds generate-manifests generate-dashboards generate-protos
 
 generate-crds:
-ifeq ($(CONTAINER),)
-	bash ./tools/generate-crds.bash
-else
+ifeq ($(USE_CONTAINER),1)
 	$(RERUN_IN_CONTAINER)
+else
+	bash ./tools/generate-crds.bash
 endif
 
 generate-manifests:
-ifeq ($(CONTAINER),)
-	cd production/kubernetes/build && bash build.sh
-else
+ifeq ($(USE_CONTAINER),1)
 	$(RERUN_IN_CONTAINER)
+else
+	cd production/kubernetes/build && bash build.sh
 endif
 
 generate-dashboards:
-ifeq ($(CONTAINER),)
+ifeq ($(USE_CONTAINER),1)
+	$(RERUN_IN_CONTAINER)
+else
 	cd example/docker-compose && jb install && \
 	cd grafana/dashboards && jsonnet template.jsonnet -J ../../vendor -m .
-else
-	$(RERUN_IN_CONTAINER)
 endif
 
 PROTO_DEFS := $(shell find . $(DONT_FIND) -type f -name '*.proto' -print)
@@ -119,10 +146,10 @@ generate-protos: $(PROTO_GOS)
 
 .PHONY: %.pb.go $(PROTO_GOS)
 %.pb.go: $(PROTO_DEFS)
-ifeq ($(CONTAINER),)
-	protoc -I .:./$(@D) --gogoslick_out=Mgoogle/protobuf/timestamp.proto=github.com/gogo/protobuf/types,plugins=grpc,paths=source_relative:./ ./$(patsubst %.pb.go,%.proto,$@);
-else
+ifeq ($(USE_CONTAINER),1)
 	$(RERUN_IN_CONTAINER)
+else
+	protoc -I .:./$(@D) --gogoslick_out=Mgoogle/protobuf/timestamp.proto=github.com/gogo/protobuf/types,plugins=grpc,paths=source_relative:./ ./$(patsubst %.pb.go,%.proto,$@);
 endif
 
 # Requires DRONE_TOKEN set in environment from drone.grafana.net profile.
@@ -138,58 +165,162 @@ sign-drone:
 .PHONY: lint test
 
 lint:
-ifeq ($(CONTAINER),)
-	GO111MODULE=on golangci-lint run -v --timeout=10m
-else
+ifeq ($(USE_CONTAINER),1)
 	$(RERUN_IN_CONTAINER)
+else
+	GO111MODULE=on golangci-lint run -v --timeout=10m
 endif
 
 # We have to run test twice: once for all packages with -race and then once
 # more without -race for packages that have known race detection issues.
 test:
-ifeq ($(CONTAINER),)
+ifeq ($(USE_CONTAINER),1)
+	$(RERUN_IN_CONTAINER)
+else
 	CGO_ENABLED=1 go test $(GO_FLAGS) -race -cover -coverprofile=cover.out -p=4 ./...
 	CGO_ENABLED=1 go test $(GO_FLAGS) -cover -coverprofile=cover-norace.out -p=4 ./pkg/integrations/node_exporter ./pkg/logs ./pkg/operator ./pkg/util/k8s
-else
-	$(RERUN_IN_CONTAINER)
 endif
+
+#
+# Build targets
+#
 
 # REMAINING MAKEFILE TARGETS LIST:
 #
-# agentctl agent-operator grafana-agent-crow agent-smoke
-# agentctl-image agent-operator-image grafana-agent-crow-image agent-smoke-image
+# agent-operator grafana-agent-crow agent-smoke
+# agent-operator-image grafana-agent-crow-image agent-smoke-image
 # dist dist-agent dist-packages test-packages publish
 
-# IDEAS: what should the default behavior be?
+# IDEAS: what should the default behavior be? container or no container?
+#
+# TODO(rfratto): we need the concept of proving the "host environment" here
+# without having to have Go installed. How can we do that? Maybe we just say
+# that Go is a hard requirement from the Makefile's perspective?
 
-.PHONY: agent agent-image
+.PHONY: agent agentctl
 agent:
-ifeq ($(CONTAINER),)
-	$(GO_ENV) go build $(GO_FLAGS) -o build/grafana-$@-$(BINARY_SUFFIX) ./cmd/agent
-else
+ifeq ($(USE_CONTAINER),1)
 	$(RERUN_IN_CONTAINER)
+else
+	$(GO_ENV) go build $(GO_FLAGS) -o build/grafana-$@-$(BINARY_SUFFIX) ./cmd/agent
+endif
+agentctl:
+ifeq ($(USE_CONTAINER),1)
+	$(RERUN_IN_CONTAINER)
+else
+	$(GO_ENV) go build $(GO_FLAGS) -o build/grafana-$@-$(BINARY_SUFFIX) ./cmd/agentctl
 endif
 
+# These don't work as expected because the GOARCH might not even match up with
+# the host environment for Docker.
+
+.PHONY: agent-image agentctl-image
 agent-image:
 	GOOS=linux $(MAKE) -f Makefile.v2 agent
 	docker build -t $(AGENT_IMAGE) -f cmd/agent/Dockerfile.slim .
+agentctl-image:
+	GOOS=linux $(MAKE) -f Makefile.v2 agentctl
+	docker build -t $(AGENTCTL_IMAGE) -f cmd/agentctl/Dockerfile.slim .
 
+# The golang base image set GOARM=5 for both the linux/arm/v6 and linux/arm/v7
+# platforms.
+.PHONY: agent-ximage agentctl-ximage
 agent-ximage:
 	GOOS=linux GOARCH=amd64         $(MAKE) -f Makefile.v2 agent
 	GOOS=linux GOARCH=arm64         $(MAKE) -f Makefile.v2 agent
-	GOOS=linux GOARCH=arm   GOARM=6 $(MAKE) -f Makefile.v2 agent
-	GOOS=linux GOARCH=arm   GOARM=7 $(MAKE) -f Makefile.v2 agent
+	GOOS=linux GOARCH=arm   GOARM=5 $(MAKE) -f Makefile.v2 agent
 	docker buildx build --push \
 		--platform linux/amd64,linux/arm64,linux/arm/v6,linux/arm/v7 \
 		-t $(AGENT_IMAGE) -f cmd/agent/Dockerfile.slim .
+agentctl-ximage:
+	GOOS=linux GOARCH=amd64         $(MAKE) -f Makefile.v2 agentctl
+	GOOS=linux GOARCH=arm64         $(MAKE) -f Makefile.v2 agentctl
+	GOOS=linux GOARCH=arm   GOARM=5 $(MAKE) -f Makefile.v2 agentctl
+	docker buildx build --push \
+		--platform linux/amd64,linux/arm64,linux/arm/v6,linux/arm/v7 \
+		-t $(AGENTCTL_IMAGE) -f cmd/agentctl/Dockerfile.slim .
 
 .PHONY: clean
 clean:
 	rm -rf build/
 
+#
+# Releasing
+#
+
+.PHONY: dist dist-agent dist-agentctl dist-packages
+dist: dist-agent dist-agent-installer dist-agentctl dist-packages
+
+dist-agent:
+	GOOS=darwin  GOARCH=amd64         $(MAKE) -f Makefile.v2 agent
+	GOOS=darwin  GOARCH=arm64         $(MAKE) -f Makefile.v2 agent
+	GOOS=linux   GOARCH=amd64         $(MAKE) -f Makefile.v2 agent
+	GOOS=linux   GOARCH=arm64         $(MAKE) -f Makefile.v2 agent
+	GOOS=linux   GOARCH=arm   GOARM=6 $(MAKE) -f Makefile.v2 agent
+	GOOS=linux   GOARCH=arm   GOARM=7 $(MAKE) -f Makefile.v2 agent
+	GOOS=windows GOARCH=amd64         $(MAKE) -f Makefile.v2 agent
+	GOOS=freebsd GOARCH=amd64         $(MAKE) -f Makefile.v2 agent
+
+dist-agent-installer: | dist-agent
+ifeq ($(USE_CONTAINER),1)
+	cp ./build/grafana-agent-windows-amd64.exe ./packages/windows/agent-windows-amd64.exe
+	makensis -V4 -DVERSION=${RELEASE_TAG} -DOUT="../../build/grafana-agent-windows-installer.exe" ./packaging/windows/install_script.nsis
+else
+	$(RERUN_IN_CONTAINER)
+endif
+
+dist-agentctl:
+	GOOS=darwin  GOARCH=amd64         $(MAKE) -f Makefile.v2 agentctl
+	GOOS=darwin  GOARCH=amd64         $(MAKE) -f Makefile.v2 agentctl
+	GOOS=linux   GOARCH=amd64         $(MAKE) -f Makefile.v2 agentctl
+	GOOS=linux   GOARCH=amd64         $(MAKE) -f Makefile.v2 agentctl
+	GOOS=linux   GOARCH=amd64 GOARM=6 $(MAKE) -f Makefile.v2 agentctl
+	GOOS=linux   GOARCH=amd64 GOARM=7 $(MAKE) -f Makefile.v2 agentctl
+	GOOS=windows GOARCH=amd64         $(MAKE) -f Makefile.v2 agentctl
+	GOOS=freebsd GOARCH=amd64         $(MAKE) -f Makefile.v2 agentctl
+
+dist-packages:
+ifeq ($(USE_CONTAINER),1)
+	$(RERUN_IN_CONTAINER)
+else
+	$(call generate_fpm,deb,amd64,amd64,./build/grafana-agent-$(PACKAGE_VERSION)-$(PACKAGE_RELEASE).amd64.deb)
+	$(call generate_fpm,deb,arm64,amd64,./build/grafana-agent-$(PACKAGE_VERSION)-$(PACKAGE_RELEASE).arm64.deb)
+	$(call generate_fpm,deb,armhf,armv6,./build/grafana-agent-$(PACKAGE_VERSION)-$(PACKAGE_RELEASE).armv6.deb)
+	$(call generate_fpm,deb,armhf,armv7,./build/grafana-agent-$(PACKAGE_VERSION)-$(PACKAGE_RELEASE).armv7.deb)
+	$(call generate_fpm,rpm,x86_64,amd64,./build/grafana-agent-$(PACKAGE_VERSION)-$(PACKAGE_RELEASE).amd64.rpm)
+	$(call generate_fpm,rpm,aarch64,arm64,./build/grafana-agent-$(PACKAGE_VERSION)-$(PACKAGE_RELEASE).arm64.rpm)
+	$(call generate_fpm,rpm,armhfp,armv7,./build/grafana-agent-$(PACKAGE_VERSION)-$(PACKAGE_RELEASE).armv7.rpm)
+endif
+
+# generate_fpm(deb|rpm, package arch, agent arch, output file)
+define generate_fpm =
+	fpm -s dir -v $(PACKAGE_VERSION) -a $(2) \
+		-n grafana-agent --iteration $(PACKAGE_RELEASE) -f \
+		--log error \
+		--license "Apache 2.0" \
+		--vendor "Grafana Labs" \
+		--url "https://github.com/grafana/agent" \
+		-t $(1) \
+		--after-install packaging/$(1)/control/postinst \
+		--before-remove packaging/$(1)/control/prerm \
+		--config-files /etc/grafana-agent.yaml \
+		--config-files $(ENVIRONMENT_FILE_$(1)) \
+		--package $(4) \
+			dist/agent-linux-$(3)=/usr/bin/grafana-agent \
+			dist/agentctl-linux-$(3)=/usr/bin/grafana-agentctl \
+			packaging/grafana-agent.yaml=/etc/grafana-agent.yaml \
+			packaging/environment-file=$(ENVIRONMENT_FILE_$(1)) \
+			packaging/$(1)/grafana-agent.service=/usr/lib/systemd/system/grafana-agent.service
+endef
+
+
+#
+# Miscellaneous
+#
+
 .PHONY: build-image
 build-image:
-ifeq ($(RECREATE_BUILD_IMAGE),)
+ifeq ($(RECREATE_BUILD_IMAGE),1)
 	docker image inspect $(BUILD_IMAGE) >/dev/null 2>&1 || \
 	docker pull $(BUILD_IMAGE) || \
 	docker build -t $(BUILD_IMAGE) ./build-image
@@ -199,11 +330,11 @@ endif
 
 # Creates a build container and runs make inside of it. Environment variables
 # used for the makefile (minus CONTAINER) get propagated.
-define CONTAINER_MAKE
+define RERUN_IN_CONTAINER
 	@$(MAKE) -f Makefile.v2 build-image
 	@mkdir -p build/.cache
 	@mkdir -p build/.pkg
-	docker run --rm -i \
+	docker run --init --rm -it \
 		-e "AGENT_IMAGE=$(AGENT_IMAGE)" \
 		-e "AGENTCTL_IMAGE=$(AGENTCTL_IMAGE)" \
 		-e "OPERATOR_IMAGE=$(OPERATOR_IMAGE)" \
@@ -220,32 +351,27 @@ define CONTAINER_MAKE
 		-v "$(shell pwd):/src" \
 		-v "/var/run/docker.sock:/var/run/docker.sock" \
 		-w "/src" \
-		$(BUILD_IMAGE) make
+		$(BUILD_IMAGE) make -f Makefile.v2 $@
 endef
 
-RERUN_IN_CONTAINER = $(CONTAINER_MAKE) -f Makefile.v2 $@
+.PHONY: info
+info:
+	@printf "AGENT_IMAGE    = $(AGENT_IMAGE)\n"
+	@printf "AGENTCTL_IMAGE = $(AGENTCTL_IMAGE)\n"
+	@printf "OPERATOR_IMAGE = $(OPERATOR_IMAGE)\n"
+	@printf "CROW_IMAGE     = $(CROW_IMAGE)\n"
+	@printf "SMOKE_IMAGE    = $(SMOKE_IMAGE)\n"
+	@printf "BUILD_IMAGE    = $(BUILD_IMAGE)\n"
+	@printf "USE_CONTAINER  = $(USE_CONTAINER)\n"
+	@printf "GOOS           = $(GOOS)\n"
+	@printf "GOARCH         = $(GOARCH)\n"
+	@printf "GOARM          = $(GOARM)\n"
+	@printf "CGO_ENABLED    = $(CGO_ENABLED)\n"
+	@printf "RELEASE_BUILD  = $(RELEASE_BUILD)\n"
+	@printf "\n"
+	@printf "binary file name pattern: *-$(BINARY_SUFFIX)\n"
 
 # awk magic to print out the comment block at the top of this file.
 .PHONY: help
 help:
 	@awk 'BEGIN {FS="## "} /^##\s*(.*)/ { print $$2 }' $(MAKEFILE_LIST)
-
-#
-# Constants to use inside of targets
-#
-
-GO_ENV        := GOOS=$(GOOS) GOARCH=$(GOARCH) GOARM=$(GOARM) CGO_ENABLED=$(CGO_ENABLED)
-BINARY_SUFFIX := $(GOOS)-$(GOARCH)$(GOARM)
-
-GIT_REVISION      := $(shell git rev-parse --short HEAD)
-GIT_BRANCH        := $(shell git rev-parse --abbrev-ref HEAD)
-VPREFIX           := github.com/grafana/agent/pkg/build
-GO_LDFLAGS        := -X $(VPREFIX).Branch=$(GIT_BRANCH) -X $(VPREFIX).Version=$(IMAGE_TAG) -X $(VPREFIX).Revision=$(GIT_REVISION) -X $(VPREFIX).BuildUser=$(shell whoami)@$(shell hostname) -X $(VPREFIX).BuildDate=$(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
-RELEASE_GO_FLAGS := -ldflags "-s -w $(GO_LDFLAGS)" -tags "netgo"
-DEBUG_GO_FLAGS   := -gcflags "all=-N -l" -ldflags "$(GO_LDFLAGS)" -tags "netgo"
-
-ifeq ($(RELEASE_BUILD),)
-GO_FLAGS := $(DEBUG_GO_FLAGS)
-else
-GO_FLAGS := $(RELEASE_GO_FLAGS)
-endif
