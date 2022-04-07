@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package discovery.agent.grafana.v1;
+option go_package = "github.com/grafana/agent/pkg/discovery/discoverypb";
+
+import "google/protobuf/struct.proto";
+
+// Discoverer emits a set of discovered targets.
+service Discoverer {
+  // Watch returns a stream of TargetSets as they are discovered. Watch will
+  // immediately stream the current known TargetSets before streaming new
+  // TargetSets as updates happen.
+  //
+  // Each TargetSet has a known ID and the list of complete target groups
+  // associated with that set. It is the responsibility of the caller to know
+  // what IDs to expect and to ignore unexpected TargetSets.
+  rpc Watch(WatchRequest) returns (stream TargetSet);
+}
+
+message WatchRequest {
+  // NOTE(rfratto): Empty to allow for future extensions
+}
+
+message TargetSet {
+  // Unique identifier for the target set.
+  //
+  // The set of Identifiers should be known to both Discoverer server and
+  // client. This will allow the client to ignore unknown TargetSets or clean
+  // up its cache when an existing TargetSet ID is invalidated.
+  string id = 1;
+
+  // Target groups discovered. The groups field must contain the complete
+  // declarative set of known targets for id; i.e., it is invalid to split
+  // targets for the same id across two TargetSets.
+  google.protobuf.Struct groups = 2;
+}
