@@ -1,8 +1,11 @@
 package config
 
 import (
-	"github.com/prometheus/common/model"
+	"fmt"
 	"time"
+
+	"github.com/grafana/regexp"
+	"github.com/prometheus/common/model"
 )
 
 type Config struct {
@@ -28,6 +31,7 @@ type Node struct {
 	SimpleRemoteWrite     *SimpleRemoteWrite     `yaml:"simple_metric_remote_write,omitempty"`
 	PrometheusRemoteWrite *PrometheusRemoteWrite `yaml:"prometheus_remote_write,omitempty"`
 	Scraper               *Scraper               `yaml:"scraper,omitempty"`
+	MetricRelabelConfigs  *MetricRelabel         `yaml:"metric_relabel_configs,omitempty"`
 
 	Credentials *CredentialsManager `yaml:"credentials,omitempty"`
 }
@@ -144,4 +148,77 @@ func (s *ScrapeConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 	type plain ScrapeConfig
 	return unmarshal((*plain)(s))
+}
+
+type MetricRelabel struct {
+	Rules []MetricRelabelRule `yaml:"rules,omitempty"`
+}
+
+type MetricRelabelRule struct {
+	SourceLabels []string `yaml:"source_labels,omitempty"`
+	Separator    string   `yaml:"separator,omitempty"`
+	TargetLabel  string   `yaml:"target_label,omitempty"`
+	Regex        Regex    `yaml:"regex,omitempty"`
+	Modulus      uint64   `yaml:"modulus,omitempty"`
+	Replacement  string   `yaml:"replacement,omitempty"`
+	Action       string   `yaml:"action,omitempty"`
+}
+
+var DefaultMetricRelabelRule = MetricRelabelRule{
+	Separator:   ";",
+	Regex:       Regex{regexp.MustCompile("(.*)")},
+	Replacement: "$1",
+	Action:      "replace",
+}
+
+func (rr *MetricRelabelRule) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	*rr = DefaultMetricRelabelRule
+
+	type rule MetricRelabelRule
+	if err := unmarshal((*rule)(rr)); err != nil {
+		return err
+	}
+
+	switch rr.Action {
+	case "replace", "keep", "drop", "hashmod", "labelmap", "labeldrop", "labelkeep":
+		// no-op
+	case "":
+		return fmt.Errorf("action is required")
+	default:
+		return fmt.Errorf("unrecognized action %q", rr.Action)
+	}
+
+	if rr.Action == "replace" && rr.TargetLabel == "" {
+		return fmt.Errorf("target_label must be set when action is replace")
+	}
+
+	return nil
+}
+
+type Regex struct{ *regexp.Regexp }
+
+func (r Regex) String() string {
+	if r.Regexp == nil {
+		return ""
+	}
+	return r.Regexp.String()
+}
+
+func (r Regex) MarshalYAML() (interface{}, error) {
+	return r.String(), nil
+}
+
+func (r *Regex) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	var s string
+	if err := unmarshal(&s); err != nil {
+		return err
+	}
+
+	compiled, err := regexp.Compile(s)
+	if err != nil {
+		return err
+	}
+
+	r.Regexp = compiled
+	return nil
 }

@@ -2,6 +2,9 @@ package actorsystem
 
 import (
 	"fmt"
+	"strings"
+	"time"
+
 	"github.com/AsynkronIT/protoactor-go/actor"
 	"github.com/AsynkronIT/protoactor-go/mailbox"
 	"github.com/go-kit/kit/log"
@@ -16,8 +19,6 @@ import (
 	"github.com/grafana/agent/pkg/agentflow/types/actorstate"
 	"github.com/prometheus/client_golang/prometheus"
 	"gopkg.in/yaml.v2"
-	"strings"
-	"time"
 )
 
 // Orchestrator handles creation of all the actors and statistics, verifies that the actor system is setup correctly
@@ -218,6 +219,8 @@ func (u *Orchestrator) processNode(nodeCfg config.Node, global *types.Global) er
 		no, err = auth.NewCredentialsManager(nodeCfg.Name, nodeCfg.Credentials)
 	} else if nodeCfg.Scraper != nil {
 		no, err = metrics.NewScrape(nodeCfg.Name, *nodeCfg.Scraper, global)
+	} else if nodeCfg.MetricRelabelConfigs != nil {
+		no, err = metrics.NewRelabel(nodeCfg.Name, *nodeCfg.MetricRelabelConfigs)
 	}
 
 	if err != nil {
