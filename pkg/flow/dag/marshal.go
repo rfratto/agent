@@ -20,7 +20,7 @@ func MarshalDOT(g *Graph) []byte {
 
 	fmt.Fprintf(&buf, "\n\t// Edges:\n")
 	for _, edge := range g.Edges() {
-		fmt.Fprintf(&buf, "\t%q -> %q\n", edge.From.Name(), edge.To.Name())
+		fmt.Fprintf(&buf, "\t%q -> %q\n", edge.To.Name(), edge.From.Name())
 	}
 
 	fmt.Fprintln(&buf, "}")

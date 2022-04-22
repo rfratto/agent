@@ -3,6 +3,7 @@ package metricsscraper
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 	"time"
 
@@ -10,7 +11,6 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/agent/component"
-	metricsforwarder "github.com/grafana/agent/component/metrics-forwarder"
 	"github.com/grafana/agent/pkg/build"
 	"github.com/hashicorp/hcl/v2"
 	"github.com/prometheus/common/model"
@@ -33,12 +33,13 @@ func init() {
 			return NewComponent(o, c.(Config))
 		},
 	})
+
+	component.RegisterComplexType("MetricsStream", reflect.TypeOf(component.Pubsub[*Appendable]{}))
 }
 
 // Config represents the input state of the metrics_scraper component.
 type Config struct {
-	Targets []TargetGroup                     `hcl:"targets"`
-	SendTo  *metricsforwarder.MetricsReceiver `hcl:"send_to"`
+	Targets []TargetGroup `hcl:"targets"`
 
 	HonorLabels           bool                `hcl:"honor_labels,optional"`
 	HonorTimestamps       bool                `hcl:"honor_timestamps,optional"`
@@ -84,32 +85,38 @@ type TargetGroup struct {
 // LabelSet is a map of label names to values.
 type LabelSet map[string]string
 
+type State struct {
+	Stream *component.Pubsub[*Appendable] `hcl:"stream"`
+}
+
+type Appendable struct{ storage.Appendable }
+
 // Component is the metrics_scraper component.
 type Component struct {
-	log log.Logger
-	id  string
+	log     log.Logger
+	id      string
+	stream  *component.Pubsub[*Appendable]
+	scraper *scrape.Manager
 
-	mut sync.RWMutex
-	cfg Config
-
+	mut        sync.RWMutex
+	cfg        Config
 	newTargets chan struct{}
-	scraper    *scrape.Manager
-	app        *lazyAppendable
 }
 
 // NewComponent creates a new metrics_scraper component.
 func NewComponent(o component.Options, c Config) (*Component, error) {
-	app := &lazyAppendable{id: o.ComponentID}
+	pubsub := component.NewPubsub[*Appendable]()
+	app := &pubsubAppendable{stream: pubsub}
 
 	scrapeLogger := log.With(o.Logger, "subcomponent", "scrape")
 	scraper := scrape.NewManager(&scrape.Options{}, scrapeLogger, app)
 
 	res := &Component{
-		log: o.Logger,
-		id:  o.ComponentID,
+		log:     o.Logger,
+		id:      o.ComponentID,
+		stream:  pubsub,
+		scraper: scraper,
 
-		app:        app,
-		scraper:    scraper,
 		newTargets: make(chan struct{}, 1),
 	}
 	if err := res.Update(c); err != nil {
@@ -118,8 +125,11 @@ func NewComponent(o component.Options, c Config) (*Component, error) {
 	return res, nil
 }
 
-var _ component.Component = (*Component)(nil)
-var _ component.StatusComponent = (*Component)(nil)
+var (
+	_ component.Component         = (*Component)(nil)
+	_ component.StatusComponent   = (*Component)(nil)
+	_ component.StatefulComponent = (*Component)(nil)
+)
 
 // Run implements Component.
 func (c *Component) Run(ctx context.Context) error {
@@ -208,7 +218,6 @@ func (c *Component) Update(newConfig component.Config) error {
 		return fmt.Errorf("error applying targets: %w", err)
 	}
 
-	c.app.Set(cfg.SendTo)
 	c.cfg = cfg
 
 	select {
@@ -220,7 +229,8 @@ func (c *Component) Update(newConfig component.Config) error {
 
 // CurrentState implements Component.
 func (c *Component) CurrentState() interface{} {
-	return nil
+	fmt.Printf("!!!! EMITTING %p\n", c.stream)
+	return &State{Stream: c.stream}
 }
 
 // Config implements Component.
@@ -230,43 +240,115 @@ func (c *Component) Config() Config {
 	return c.cfg
 }
 
-type lazyAppendable struct {
-	id    string
-	mut   sync.RWMutex
-	inner storage.Appendable
+type pubsubAppendable struct {
+	stream *component.Pubsub[*Appendable]
 }
 
-var _ storage.Appendable = (*lazyAppendable)(nil)
+func (psa *pubsubAppendable) Appender(ctx context.Context) storage.Appender {
+	var apps []storage.Appender
 
-func (la *lazyAppendable) Appender(ctx context.Context) storage.Appender {
-	la.mut.RLock()
-	defer la.mut.RUnlock()
-
-	if la.inner == nil {
-		return &failedAppender{id: la.id}
+	for _, app := range psa.stream.List() {
+		apps = append(apps, app.Appender(ctx))
 	}
 
-	return la.inner.Appender(ctx)
+	var primary storage.Appender
+	if len(apps) == 0 {
+		primary = noOpAppender{}
+	} else {
+		primary = apps[0]
+	}
+
+	var secondary []storage.Appender
+	if len(apps) == 0 {
+		secondary = apps[1:]
+	}
+
+	return &fanoutAppender{
+		primary:   primary,
+		secondary: secondary,
+	}
 }
 
-func (la *lazyAppendable) Set(app storage.Appendable) {
-	la.mut.Lock()
-	defer la.mut.Unlock()
-	la.inner = app
+type fanoutAppender struct {
+	primary   storage.Appender
+	secondary []storage.Appender
 }
 
-type failedAppender struct{ id string }
+func (f *fanoutAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	ref, err := f.primary.Append(ref, l, t, v)
+	if err != nil {
+		return 0, err
+	}
 
-var _ storage.Appender = (*failedAppender)(nil)
+	for _, app := range f.secondary {
+		_, err := app.Append(ref, l, t, v)
+		if err != nil {
+			return 0, err
+		}
+	}
 
-func (fa *failedAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
-	return 0, fmt.Errorf("component %s does not have a configured MetricsReceiver to send samples to", fa.id)
+	return ref, nil
 }
 
-func (fa *failedAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
-	return 0, fmt.Errorf("component %s does not have a configured MetricsReceiver to send examplars to", fa.id)
+func (f *fanoutAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	ref, err := f.primary.AppendExemplar(ref, l, e)
+	if err != nil {
+		return 0, err
+	}
+
+	for _, app := range f.secondary {
+		_, err := app.AppendExemplar(ref, l, e)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	return ref, nil
 }
 
-func (fa *failedAppender) Commit() error { return nil }
+func (f *fanoutAppender) Commit() (err error) {
+	err = f.primary.Commit()
 
-func (fa *failedAppender) Rollback() error { return nil }
+	for _, appender := range f.secondary {
+		if err == nil {
+			err = appender.Commit()
+		} else {
+			if rollbackErr := appender.Rollback(); rollbackErr != nil {
+				// TODO(rfratto): log
+			}
+		}
+	}
+	return
+}
+
+func (f *fanoutAppender) Rollback() (err error) {
+	err = f.primary.Rollback()
+
+	for _, appender := range f.secondary {
+		rollbackErr := appender.Rollback()
+		if err == nil {
+			err = rollbackErr
+		} else if rollbackErr != nil {
+			// TODO(rfratto): log
+		}
+	}
+	return nil
+}
+
+type noOpAppender struct{}
+
+func (noOpAppender) Append(ref storage.SeriesRef, l labels.Labels, t int64, v float64) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
+func (noOpAppender) AppendExemplar(ref storage.SeriesRef, l labels.Labels, e exemplar.Exemplar) (storage.SeriesRef, error) {
+	return 0, nil
+}
+
+func (noOpAppender) Commit() (err error) {
+	return nil
+}
+
+func (noOpAppender) Rollback() (err error) {
+	return nil
+}

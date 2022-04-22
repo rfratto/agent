@@ -6,7 +6,6 @@ import (
 	"math"
 	"net/url"
 	"path/filepath"
-	"reflect"
 	"sort"
 	"sync"
 	"time"
@@ -14,6 +13,7 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/grafana/agent/component"
+	metricsscraper "github.com/grafana/agent/component/metrics-scraper"
 	"github.com/grafana/agent/pkg/build"
 	"github.com/grafana/agent/pkg/flow/hcltypes"
 	"github.com/grafana/agent/pkg/metrics/wal"
@@ -50,18 +50,14 @@ func init() {
 			return NewComponent(o, c.(Config))
 		},
 	})
-
-	component.RegisterComplexType("MetricsReceiver", reflect.TypeOf(MetricsReceiver{}))
 }
-
-// MetricsReceiver is the type used by the metrics_forwarder component to
-// receive metrics to write to a WAL.
-type MetricsReceiver struct{ storage.Appendable }
 
 // Config represents the input state of the metrics_forwarder component.
 type Config struct {
 	ExternalLabels map[string]string    `hcl:"external_labels,optional"`
 	RemoteWrite    []*RemoteWriteConfig `hcl:"remote_write,block"`
+
+	Source *component.Pubsub[*metricsscraper.Appendable] `hcl:"source"`
 }
 
 // RemoteWriteConfig is the metrics_fowarder's configuration for where to send
@@ -79,11 +75,6 @@ type BasicAuthConfig struct {
 	Password hcltypes.Secret `hcl:"password"`
 }
 
-// State represents the output state of the metrics_forwarder component.
-type State struct {
-	Receiver *MetricsReceiver `hcl:"receiver"`
-}
-
 // Component is the metrics_forwarder component.
 type Component struct {
 	log  log.Logger
@@ -93,6 +84,7 @@ type Component struct {
 	walStore    *wal.Storage
 	remoteStore *remote.Storage
 	storage     storage.Storage
+	app         *metricsscraper.Appendable
 
 	mut sync.RWMutex
 	cfg Config
@@ -113,14 +105,17 @@ func NewComponent(o component.Options, c Config) (*Component, error) {
 	remoteLogger := log.With(o.Logger, "subcomponent", "rw")
 	remoteStore := remote.NewStorage(remoteLogger, reg, startTime, dataPath, remoteFlushDeadline, nil)
 
+	storage := storage.NewFanout(o.Logger, walStorage, remoteStore)
+
 	res := &Component{
 		log:  o.Logger,
 		opts: o,
 		reg:  reg,
+		app:  &metricsscraper.Appendable{Appendable: storage},
 
 		walStore:    walStorage,
 		remoteStore: remoteStore,
-		storage:     storage.NewFanout(o.Logger, walStorage, remoteStore),
+		storage:     storage,
 	}
 	if err := res.Update(c); err != nil {
 		return nil, err
@@ -136,6 +131,13 @@ var _ component.CollectorComponent = (*Component)(nil)
 // Run implements Component.
 func (c *Component) Run(ctx context.Context) error {
 	defer func() {
+		c.mut.Lock()
+		defer c.mut.Unlock()
+
+		if c.cfg.Source != nil {
+			c.cfg.Source.Unsubscribe(c.app)
+		}
+
 		level.Debug(c.log).Log("msg", "closing storage")
 		err := c.storage.Close()
 		level.Debug(c.log).Log("msg", "storage closed")
@@ -204,6 +206,13 @@ func (c *Component) Update(newConfig component.Config) error {
 	c.mut.Lock()
 	defer c.mut.Unlock()
 
+	// TODO(rfratto): only close subscriptions to sources that have disappeared
+	// to minimize missing metrics during update.
+	if c.cfg.Source != nil {
+		c.cfg.Source.Unsubscribe(c.app)
+	}
+	cfg.Source.Subscribe(c.app)
+
 	var rwConfigs []*config.RemoteWriteConfig
 	for _, rw := range cfg.RemoteWrite {
 		parsedURL, err := url.Parse(rw.URL)
@@ -253,11 +262,6 @@ func toLabels(in map[string]string) labels.Labels {
 	}
 	sort.Sort(res)
 	return res
-}
-
-// CurrentState implements Component.
-func (c *Component) CurrentState() interface{} {
-	return State{&MetricsReceiver{Appendable: c.storage}}
 }
 
 // Config implements Component.

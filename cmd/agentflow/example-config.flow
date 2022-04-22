@@ -9,25 +9,6 @@ remote "http" "example-password" {
   // content = <HTTP response body>
 }
 
-// Each metrics_forwarder is implemented as a WAL + zero or more remote_writes.
-metrics_forwarder "default" {
-  external_labels = {
-    cluster = "flow-demo"
-  }
-
-  remote_write {
-    url = "http://localhost:9009/api/prom/push"
-
-    basic_auth {
-      username = "helloworld"
-      password = remote.http.example-password.content
-    }
-  }
-
-  // State:
-  // receiver = <value where metrics can be sent>
-}
-
 // Discover some Prometheus targets.
 discovery "static" "self" {
   hosts  = ["localhost:12345"]
@@ -53,10 +34,28 @@ metrics_scraper "default" {
     discovery.static.self.targets,
     integration.github.default.targets,
   )
-  send_to = metrics_forwarder.default.receiver
 
   scrape_interval = "60s"
   scrape_timeout  = "10s"
 
-  // State: <none>
+  // State:
+  // stream = <pubsub of scraped targets>
+}
+
+// Each metrics_forwarder is implemented as a WAL + zero or more remote_writes.
+metrics_forwarder "default" {
+  external_labels = {
+    cluster = "flow-demo"
+  }
+
+  remote_write {
+    url = "http://localhost:9009/api/prom/push"
+
+    basic_auth {
+      username = "helloworld"
+      password = remote.http.example-password.content
+    }
+  }
+
+  source = metrics_scraper.default.stream
 }
