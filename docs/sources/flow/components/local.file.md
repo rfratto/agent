@@ -1,3 +1,9 @@
+---
+aliases:
+- /docs/agent/latest/flow/components/local.file
+title: local.file
+---
+
 # local.file
 
 The `local.file` component exposes the contents of a file on disk to other

@@ -1,3 +1,9 @@
+---
+aliases:
+- /docs/agent/latest/flow/components/targets.mutate
+title: targets.mutate
+---
+
 # targets.mutate
 
 The `targets.mutate` component rewrites the label set of the input
