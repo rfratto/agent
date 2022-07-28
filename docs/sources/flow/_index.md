@@ -11,10 +11,10 @@ Grafana Agent Flow is a _component-based_ experimental revision of Grafana
 Agent with a focus on ease-of-use, debuggability, and ability to adapt to the
 needs of power users.
 
-> **WARNING**: Grafana Agent Flow is experimental, and is subject to change or
-> removal at any time.
+> **WARNING**: Grafana Agent Flow is experimental, and is subject to frequent
+> breaking changes or removal from the project at any time.
 >
-> You should use Grafana Agent Flow if you are okay with bleeding edge
+> You should only use Grafana Agent Flow if you are okay with bleeding edge
 > functionality and want to provide feedback to the developers.
 >
 > It is not recommended to use Grafana Agent Flow in production.

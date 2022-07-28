@@ -10,7 +10,8 @@ weight: 100
 ## Install Grafana Agent
 
 To install Grafana Agent Flow, first [install Grafana Agent][]. Grafana Agent
-Flow is an operating mode available from Grafana Agent v0.27.0 and later.
+Flow is an operating mode which will be available in an upcoming Grafana Agent
+release.
 
 ## Running Grafana Agent Flow
 
@@ -20,7 +21,7 @@ environment variables.
 Then, run Grafana Agent, passing flags to point at a config file to run with:
 
 ```
-EXPERIMENTAL_ENABLE_FLOW=true agent run --config.file=/path/to/my/config.river
+EXPERIMENTAL_ENABLE_FLOW=true agent --config.file=/path/to/my/config.river
 ```
 
 You can use this file as an example to get started:
