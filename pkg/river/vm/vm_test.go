@@ -130,6 +130,9 @@ func TestVM_Evaluate(t *testing.T) {
 		{`!true`, bool(false)},
 		{`!false`, bool(true)},
 		{`-15`, int(-15)},
+
+		// Func call
+		{`(func(a, b) a + b)(3, 5)`, int(8)},
 	}
 
 	for _, tc := range tt {

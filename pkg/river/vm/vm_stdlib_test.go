@@ -23,6 +23,17 @@ func TestVM_Stdlib(t *testing.T) {
 		{"json_decode array", `json_decode("[0, 1, 2]")`, []interface{}{float64(0), float64(1), float64(2)}},
 		{"json_decode nil field", `json_decode("{\"foo\": null}")`, map[string]interface{}{"foo": nil}},
 		{"json_decode nil array element", `json_decode("[0, null]")`, []interface{}{float64(0), nil}},
+
+		{
+			name: "map",
+			input: `
+				map(
+					func(elem) elem * 2, 
+					[1, 2, 3, 4, 5],
+				)
+			`,
+			expect: []interface{}{2, 4, 6, 8, 10},
+		},
 	}
 
 	for _, tc := range tt {

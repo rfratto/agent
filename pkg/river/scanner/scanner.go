@@ -51,6 +51,7 @@ import (
 //   RBRACK  = "]"
 //   COMMA   = ","
 //   DOT     = "."
+//   FUNC    = "func"
 //
 // The EBNF for escape_sequence is currently undocumented; see scanEscape for
 // details. The escape sequences supported by River are the same as the escape

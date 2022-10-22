@@ -564,13 +564,14 @@ func isUnaryOp(tok token.Token) bool {
 
 // parsePrimaryExpr parses a primary expression.
 //
-//	PrimaryExpr = LiteralValue | ArrayExpr | ObjectExpr
+//		PrimaryExpr = LiteralValue | ArrayExpr | ObjectExpr | FuncExpr
 //
-//	LiteralValue = identifier | string | number | float | bool | null |
-//	               "(" Expression ")"
+//		LiteralValue = identifier | string | number | float | bool | null |
+//		               "(" Expression ")"
 //
-//	ArrayExpr  = "[" [ ExpressionList ] "]"
-//	ObjectExpr = "{" [ FieldList ] "}"
+//		ArrayExpr  = "[" [ ExpressionList ] "]"
+//		ObjectExpr = "{" [ FieldList ] "}"
+//	 FuncExpr   = "func" "(" [IdentList] ")" Expression
 func (p *parser) parsePrimaryExpr() ast.Expr {
 	switch p.tok {
 	case token.IDENT:
@@ -621,6 +622,19 @@ func (p *parser) parsePrimaryExpr() ast.Expr {
 			res.Fields = p.parseFieldList(token.RCURLY)
 		}
 		res.RCurlyPos, _, _ = p.expect(token.RCURLY)
+		return &res
+
+	case token.FUNC:
+		var res ast.FuncExpr
+
+		res.FuncPos, _, _ = p.expect(token.FUNC)
+		res.LParenPos, _, _ = p.expect(token.LPAREN)
+		if p.tok != token.RPAREN {
+			res.Variables = p.parseIdentList(token.RPAREN)
+		}
+		res.RParenPos, _, _ = p.expect(token.RPAREN)
+		res.Expr = p.ParseExpression()
+
 		return &res
 	}
 
@@ -706,6 +720,32 @@ func (p *parser) parseField() *ast.ObjectField {
 
 	field.Value = p.ParseExpression()
 	return &field
+}
+
+// parseIdentList parses a list of identifiers.
+//
+//	IdentList = identifier { "," identifier } [ "," ]
+func (p *parser) parseIdentList(until token.Token) []*ast.Ident {
+	var idents []*ast.Ident
+
+	for p.tok != until && p.tok != token.EOF {
+		namePos, _, name := p.expect(token.IDENT)
+		ident := &ast.Ident{
+			Name:    name,
+			NamePos: namePos,
+		}
+		idents = append(idents, ident)
+
+		if p.tok == until {
+			break
+		}
+		if p.tok != token.COMMA {
+			p.addErrorf("missing ',' in expression list")
+		}
+		p.next()
+	}
+
+	return idents
 }
 
 func isValidIdentifier(in string) bool {

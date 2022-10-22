@@ -521,6 +521,30 @@ func (vm *Evaluator) evaluateExpr(scope *Scope, assoc map[value.Value]ast.Node, 
 		}
 		return funcVal.Call(args...)
 
+	case *ast.FuncExpr:
+		rawFn := value.RawFunction(func(funcValue value.Value, args ...value.Value) (value.Value, error) {
+			// First, len(args) must batch len(expr.Variables)
+			if len(args) != len(expr.Variables) {
+				return value.Null, value.Error{
+					Value: funcValue,
+					Inner: fmt.Errorf("expected %d args, got %d", len(expr.Variables), len(args)),
+				}
+			}
+
+			innerScope := &Scope{
+				Parent:    scope,
+				Variables: make(map[string]interface{}, len(expr.Variables)),
+			}
+			for i, v := range expr.Variables {
+				// TODO(rfratto): this is kind of inefficient, can we have a scope full
+				// of value.Value instead?
+				innerScope.Variables[v.Name] = args[i].Interface()
+			}
+
+			return vm.evaluateExpr(innerScope, make(map[value.Value]ast.Node), expr.Expr)
+		})
+		return value.Func(rawFn), nil
+
 	default:
 		panic(fmt.Sprintf("river/vm: unexpected ast.Expr type %T", expr))
 	}

@@ -54,7 +54,7 @@ func TestBuilder_GoEncode(t *testing.T) {
 	f.Body().SetAttributeValue("string", "Hello, world!")
 	f.Body().SetAttributeValue("bool", true)
 	f.Body().SetAttributeValue("list", []int{0, 1, 2})
-	f.Body().SetAttributeValue("func", func(int, int) int { return 0 })
+	f.Body().SetAttributeValue("fn", func(int, int) int { return 0 })
 	f.Body().SetAttributeValue("capsule", make(chan int))
 	f.Body().AppendTokens([]builder.Token{{token.LITERAL, "\n"}})
 
@@ -77,7 +77,7 @@ func TestBuilder_GoEncode(t *testing.T) {
 		string  = "Hello, world!"
 		bool    = true
 		list    = [0, 1, 2]
-		func    = function
+		fn      = function
 		capsule = capsule("chan int")
 
 		map = {

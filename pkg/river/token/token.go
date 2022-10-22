@@ -26,6 +26,7 @@ const (
 	keywordBeg
 	BOOL // true
 	NULL // null
+	FUNC // func
 	keywordEnd
 
 	operatorBeg
@@ -74,6 +75,7 @@ var tokenNames = [...]string{
 	STRING: "STRING",
 	BOOL:   "BOOL",
 	NULL:   "NULL",
+	FUNC:   "FUNC",
 
 	OR:  "||",
 	AND: "&&",
@@ -113,6 +115,8 @@ func Lookup(ident string) Token {
 		return BOOL
 	case "null":
 		return NULL
+	case "func":
+		return FUNC
 	default:
 		return IDENT
 	}

@@ -77,6 +77,9 @@ func BenchmarkExprs(b *testing.B) {
 		// Unary
 		{"unary not", `!true`, bool(false)},
 		{"unary neg", `-15`, int(-15)},
+
+		// Closure function calls
+		{"closure", `(func(id) id)(15)`, int(15)},
 	}
 
 	for _, tc := range tt {

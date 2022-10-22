@@ -114,6 +114,10 @@ func (tw *traversalWalker) Visit(node ast.Node) ast.Visitor {
 			ast.Walk(tw, arg)
 		}
 		return nil
+
+	case *ast.FuncExpr:
+		// TODO(rfratto): this needs to be reworked to detect inner scopes
+		return nil
 	}
 
 	return tw

@@ -184,6 +184,20 @@ func (w *walker) walkExpr(e ast.Expr) {
 		w.p.Write(token.LPAREN)
 		w.walkExpr(e.Inner)
 		w.p.Write(token.RPAREN)
+
+	case *ast.FuncExpr:
+		w.p.Write(&ast.LiteralExpr{Kind: token.FUNC, ValuePos: e.FuncPos, Value: "func"})
+		w.p.Write(token.LPAREN)
+		for i, v := range e.Variables {
+			w.p.Write(v)
+
+			if i+1 < len(e.Variables) {
+				w.p.Write(token.COMMA, wsBlank)
+			}
+		}
+		w.p.Write(token.RPAREN, wsBlank)
+
+		w.walkExpr(e.Expr)
 	}
 }
 

@@ -3,6 +3,7 @@ package stdlib
 
 import (
 	"encoding/json"
+	"fmt"
 	"os"
 
 	"github.com/grafana/agent/pkg/river/internal/value"
@@ -68,4 +69,91 @@ var Functions = map[string]interface{}{
 		}
 		return res, nil
 	},
+
+	// objmerge(object, object)
+	"objmerge": value.RawFunction(func(funcValue value.Value, args ...value.Value) (value.Value, error) {
+		if len(args) != 2 {
+			return value.Null, value.Error{
+				Value: funcValue,
+				Inner: fmt.Errorf("expected 2 args, got %d", len(args)),
+			}
+		}
+
+		var (
+			objA = args[0]
+			objB = args[1]
+		)
+
+		if objA.Type() != value.TypeObject {
+			return value.Null, value.TypeError{
+				Value:    objA,
+				Expected: value.TypeObject,
+			}
+		} else if objB.Type() != value.TypeObject {
+			return value.Null, value.TypeError{
+				Value:    objB,
+				Expected: value.TypeObject,
+			}
+		}
+
+		var (
+			aKeys = objA.Keys()
+			bKeys = objB.Keys()
+		)
+
+		keys := make(map[string]value.Value, len(aKeys)+len(bKeys))
+		for _, key := range aKeys {
+			keys[key], _ = objA.Key(key)
+		}
+		for _, key := range bKeys {
+			keys[key], _ = objB.Key(key)
+		}
+
+		return value.Object(keys), nil
+	}),
+
+	// map(function, arr)
+	"map": value.RawFunction(func(funcValue value.Value, args ...value.Value) (value.Value, error) {
+		if len(args) != 2 {
+			return value.Null, value.Error{
+				Value: funcValue,
+				Inner: fmt.Errorf("expected 2 args, got %d", len(args)),
+			}
+		}
+
+		var (
+			fnArg  = args[0]
+			arrArg = args[1]
+		)
+
+		if fnArg.Type() != value.TypeFunction {
+			return value.Null, value.TypeError{
+				Value:    fnArg,
+				Expected: value.TypeFunction,
+			}
+		} else if arrArg.Type() != value.TypeArray {
+			return value.Null, value.TypeError{
+				Value:    arrArg,
+				Expected: value.TypeArray,
+			}
+		}
+
+		res := make([]value.Value, 0, arrArg.Len())
+		for i := 0; i < arrArg.Len(); i++ {
+			// Call fnArg for each element in arrArg.
+			orig := arrArg.Index(i)
+			mapped, err := fnArg.Call(orig)
+			if err != nil {
+				// TODO(rfratto): what is the right error to return here?
+				return value.Null, value.Error{
+					Value: orig,
+					Inner: err,
+				}
+			}
+
+			res = append(res, mapped)
+		}
+
+		return value.Array(res...), nil
+	}),
 }
