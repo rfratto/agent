@@ -1,0 +1,47 @@
+name: Start new release cycle
+on:
+  workflow_dispatch: {}
+  create:
+    branches:
+      - 'release-v*'
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  update-file:
+    if: ${{ startsWith(github.ref, 'refs/heads/release-v')}}
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Check out main branch"
+        uses: "actions/checkout@v4"
+        with:
+          ref: main
+      - name: "Determine new release cycle"
+        id: next-release-cycle
+        uses: "./.github/actions/next-release-cycle"
+        with:
+          branch-name: ${{ github.ref_name }}
+      - name: "Update version file"
+        run: |
+          echo -n "${{ steps.next-release-cycle.outputs.next-cycle }}" > tools/gen-versioned-files/agent-version.txt
+      - name: "Commit and push"
+        run: |
+          git config --local user.name "${GITHUB_ACTOR}"
+          git config --local user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+          BRANCH=update-date-$(date +%s)
+          git checkout -b $BRANCH
+
+          git add tools/gen-versioned-files/agent-version.txt
+
+          git commit -F - <<EOF
+          Start release cycle ${{ steps.next-release-cycle.outputs.next-cycle }}.
+
+          Triggered by branch ${GITHUB_REF} being created.
+          EOF
+
+          git push origin HEAD
+
+          gh pr create -B main --fill --reviewer "${GITHUB_ACTOR}"
+        env:
+          GH_TOKEN: ${{ github.token }}
