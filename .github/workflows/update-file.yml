@@ -1,0 +1,34 @@
+name: Update file
+on:
+  workflow_dispatch: {}
+permissions:
+  contents: write
+  pull-requests: write
+jobs:
+  update-file:
+    runs-on: ubuntu-latest
+    steps:
+      - name: "Check out main branch"
+        uses: "actions/checkout@v4"
+        with:
+          ref: main
+      - name: "Update file"
+        run: |
+          echo "$(date)" > date.txt
+      - name: "Commit and push"
+        run: |
+          git config --local user.name "${GITHUB_ACTOR}"
+          git config --local user.email "${GITHUB_ACTOR}@users.noreply.github.com"
+
+          #git remote add origin "https://${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+
+          BRANCH=update-date-$(date +%s)
+          git checkout -b $BRANCH
+
+          git add date.txt
+          git commit -m "Update date.txt"
+          git push origin HEAD
+
+          gh pr create -B main --fill --reviewer "${GITHUB_ACTOR}"
+        env:
+          GH_TOKEN: ${{ github.token }}
